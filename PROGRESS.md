@@ -100,3 +100,68 @@ Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup**
 **Verify by hand**
 - Read `scripts/gpu_check.py`; be able to explain why fp16 here is mixed precision and why a QuickGELU mismatch is a silent quality bug.
 - Optional: `uv run python scripts/gpu_check.py --pretrained laion2b_s34b_b88k` for a PASS on the unchanged project config.
+
+---
+
+## Step 0.3 — Annotations + footage selection, GATE 0.3 (Sat 24 Oct)
+
+**Done**
+- **MEVA annotations:** official Kitware repo `gitlab.kitware.com/meva/meva-data-repo`, commit `421841a`, **CC-BY-4.0**
+  (read from its LICENSE). Blobless + sparse checkout in `data/annotations/meva-data-repo/` (138 MB; box files
+  `geom.yml` not fetched yet). Format: KPF YAML per 5-min clip; activity timespans in frames (`tsr0`).
+  Source, format, facts and the exact checkout commands: `docs/meva_notes.md`.
+- `scripts/survey_meva.py`: joins the S3 listing (3,956 videos, 475.9 GB), the clip/camera table and all annotations
+  into `data/annotations/clip_survey.csv`. Third-party labels are attached to IR clips only, in separate `ir_*` columns.
+- `scripts/select_footage.py`: camera/date choice → `data/selection.txt` (S3 key + size, generating command in the
+  header) and `results/reports/selection_0.3.md` (per camera and per camera x hour window).
+- `scripts/check_contrib_quality.py`: compares third-party labels with Kitware on shared RGB clips (quality only).
+- `tests/test_survey_meva.py`: 22 tests (clip names incl. midnight and zero-length, KPF parsing, IR flag,
+  half-open time overlap, contrib name mapping, max-not-sum, contrib labels can never land on RGB clips).
+- PROMPT R on the first proposal fixed 6 problems (IR flag per camera, duplicate handling, untested overlap logic,
+  "events" overclaim → "activity records", tsr0 off-by-one flag, README wording).
+
+**Key numbers**
+- Activity names: 37 (`documents/activity-names.txt`); vehicle start/stop are exactly **`vehicle_starts`** and **`vehicle_stops`**.
+- **Selection: 300 clips, 24.99 h (RGB 20.74 h + IR 4.25 h), 39.86 GB.**
+  - RGB: G436 (hospital), G424, G336 (school), G340 (bus), G330 (school, indoor), annotated clips only,
+    on the annotated sessions of 2018-03-07, 03-11 and 03-15. 16,527 activity records (per clip, not unique events),
+    981 `vehicle_starts`, 1,000 `vehicle_stops`. RGB clips: 120 evaluation-level, 129 training-level.
+  - IR: **G474** (school, thermal), clips co-timed with the RGB selection. Third-party labels on 29 clips (2.42 h):
+    148 records, 12 `vehicle_starts`, 15 `vehicle_stops`. No IR labels on 03-07.
+  - Co-timing: 47 of 53 five-minute RGB slots have all 5 cameras. 16 thirty-minute blocks contain footage.
+- Third-party label completeness vs Kitware on shared RGB clips: CMU-v2 0.23x records (0.22x vehicle start/stop),
+  UMD-IBM 0.45x (0.50x).
+- 53/53 tests pass.
+
+**Decisions (GATE 0.3, approved by Ashutosh)**
+- **Sessions instead of one continuous window.** MEVA records in sessions (no camera has more than 3.65 h of video on
+  any date), so the selection uses the same annotated sessions on 3 dates. Deviation from CLAUDE.md 1.5.
+  39.8 GB accepted.
+- **IR camera G474** instead of G479. Kitware labels no IR footage (its 9 IR "labels" are `empty_37` = nothing
+  present); third-party contrib labels do. G474 verified thermal by eye (glowing tyres and people) plus the MEVA abstract.
+- **Contrib labels for IR only.** RGB ground truth stays Kitware-only; contrib labels never enter RGB evaluation.
+- **Selection unit:** annotated RGB clips only, so unannotated RGB footage isn't indexed as unlabelled ground truth.
+
+**Instructions recorded for later steps (from GATE 0.3)**
+- **Step 2.1 (splits):** assign evaluation-level-labelled footage to **dev and test** wherever possible;
+  tuning may take training-level footage.
+- **Step 2.3 (metrics) and step 8.2 (test run):** for **IR**, report only recall-type metrics: Recall@k,
+  seconds-to-first-hit on labelled events, event-rule recall. **Never precision or mAP for IR**, because the
+  third-party labels are known to be incomplete.
+- **Step 8.3 (failure analysis):** add the failure cause **"correct but unlabelled"**.
+
+**Open issues**
+- VERIFY at 1.3: `tsr0` end frame inclusive or exclusive (`empty_37` spans `[0, 9000]`, the clip has frames 0-8999).
+- VERIFY at 1.3: how CMU and UMD cut timespans (numbering, boundary-crossing activities, agreement with Kitware) and
+  how to merge two sources on the same IR clip (de-duplicate by temporal overlap, never sum).
+- VERIFY: whether training-level Kitware labels are as complete as evaluation-level ones (affects 129 RGB clips).
+- Camera views assumed fixed across the 3 dates (indoor/outdoor flag never changes); confirm by eye. This matters
+  for per-camera mean-centering.
+- `drop-4-hadcv22` (another video drop) was not surveyed; Kitware/contrib annotation folders only cover `drops-123`.
+- `updates-r13/` has 2 replacement-looking files, neither in the selection.
+- The swap changes (contrib parsing) did not get a separate PROMPT R pass.
+
+**Verify by hand**
+- Open `results/reports/selection_0.3.md`; the selected cameras, dates and totals should match the table above.
+- Look at 1 frame per selected camera on each of the 3 dates (same view?).
+- Read `docs/meva_notes.md`, especially the third-party-label rules.
