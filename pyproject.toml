@@ -1,3 +1,40 @@
+[project]
+name = "rewind"
+version = "0.1.0"
+description = "Semantic video search for CCTV footage"
+requires-python = "==3.11.*"
+# No pins here: uv.lock records the exact resolved versions and hashes.
+dependencies = [
+  "torch",
+  "torchvision",
+  "open-clip-torch",
+  "opencv-python-headless",
+  "av",
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "fastapi",
+  "uvicorn",
+  "pybind11",
+  "pyyaml",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+python-preference = "only-managed"   # use uv's own Python 3.11, never /usr/bin/python3.11
+
+# CUDA builds of torch/torchvision come from the official PyTorch index; everything else from PyPI.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126" }]
+torchvision = [{ index = "pytorch-cu126" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
