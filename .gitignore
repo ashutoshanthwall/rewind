@@ -1,0 +1,25 @@
+# Footage, proxies, annotations, SQLite manifest — large and/or evidence; never committed.
+# Exception: the footage selection list is a small, reviewable decision.
+data/*
+!data/selection.txt
+
+# Derived artifacts (motion, detections, tracks, embeddings, indexes)
+artifacts/
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.ckpt
+
+# C++ engine build output
+engine/build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+.ipynb_checkpoints/

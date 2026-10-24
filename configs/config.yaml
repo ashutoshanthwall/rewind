@@ -1,0 +1,53 @@
+# Rewind configuration — all tunables live here (CLAUDE.md rule 1.1.9).
+# Initial values from CLAUDE.md section 1.9. Tune only on tuning/dev splits.
+# "TBD" values are placeholders: code must refuse to run on them, never default them.
+
+sampling:
+  appearance_fps: 1
+  max_gap_s: 10
+  dedup_motion_pixel_thresh: TBD    # step 4.1, tuning split
+motion:
+  fps: 5
+  downscale_width: 640
+  min_box_area_px: TBD
+detection:
+  enabled: TBD                      # Gate 3.3
+  model: TBD                        # yolov8n/s or yolox_s/m
+  license: TBD                      # recorded for README
+  fps: 5
+  imgsz: 640
+  conf_thresh: 0.3
+  classes: [person, car, truck, bus, motorcycle, bicycle]
+appearance:
+  model: ViT-B-16
+  pretrained: TBD                   # exact open_clip tag
+  max_crops_per_frame: 4
+  crop_source: detection_then_motion   # detection_then_motion | motion | none
+  crop_pad_frac: 0.2
+  min_crop_px: 32
+  mean_center: true
+action:
+  enabled: TBD                      # Gate 5.1
+  model: TBD
+  frames_per_window: 8
+  window_s: 4
+  stride_s: 2
+events:
+  enabled: TBD                      # Gate 6.2
+  tracker: bytetrack
+  vehicle_classes: [car, truck, bus, motorcycle]
+  stop_speed_px_per_s: TBD          # tuned on tuning split
+  min_stopped_s: TBD
+  min_moving_s: TBD
+  intent_keywords:
+    vehicle_stops: [stop, stops, stopped, stopping, park, parks, parked, parking, pulls over, halts]
+    vehicle_starts: [start, starts, starting, drives off, pulls away, leaves, departs]
+search:
+  k_per_index: 200
+  ef_search: 200                    # must be >= k
+  fusion: zscore_weighted
+  weights: {appearance: 1.0, action: TBD, events: TBD}   # tuned on tuning split
+  merge_gap_s: 5
+  max_clip_s: 60
+  clip_rank: mean_top3
+  context_s: 5
