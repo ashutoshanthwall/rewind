@@ -1446,6 +1446,68 @@ never keeps a frame: detection changes + the 10 s max gap decide alone (a grid v
 
 ---
 
+## Step 4.2 — Embeddings: frames + crops (Mon 26 Oct, autopilot run 1)
+
+**Done (code)**
+- `rewind/embed/clip_model.py`: open_clip fp16 with **preprocessing on the GPU, never a centre crop** (item 4):
+  frame views `tile0` (x 0..H), `tile1` (x W-H..W), `pad` (letterboxed W x W, black bars); object crops = box widened
+  by `crop_pad_frac` per side, grown to a square around its centre (context, not bars; black outside the frame);
+  bicubic + antialias resize, the model's own mean/std. `check_pretrained_compatible` moved here from
+  `scripts/gpu_check.py` (re-exported there).
+  **Measured vs open_clip's PIL path** (32 real tiles, G424): embedding cosine min 0.9993 / mean 0.9998 (laion2b and
+  openai); input mean |diff| 0.0014 normalised units.
+- `rewind/embed/crops.py`: detection crops (clipped, `min_crop_px` on the **longer** side, ranked by `crop_rank`,
+  <= 4) and motion crops (by area, <= 4, `dup` when chosen detections cover >= `crop_dup_cover`), stored separately;
+  `variant()` / `rewind/embed/store.variant_mask` build none / motion / detection_then_motion from one run.
+- `scripts/embed_appearance.py`: per clip, 1 fps decode at full resolution -> `Deduper` (4.1) -> kept frames ->
+  3 frame views + crops -> CLIP -> `<clip>.npy` (fp16, L2-normalised) + `<clip>.parquet` (video, camera, modality,
+  frame, t_s, type, view, crop_source, crop_rank, dup, class, score, box) + done marker; resumable, settings hash
+  (model+tag, sampling/dedup, crop settings, views, preprocessing version, index_pass settings). Several models in one
+  decode (tag check). `--pid-file`: the job writes its own PID.
+- `scripts/check_crop_ranking.py` (tuning, boxes only): annotated actors covered by the chosen crops.
+- Tests: `test_crops.py` (5), `test_clip_views.py` (5), `test_embed_store.py` (4); suite 314 pass.
+
+**Crop decisions (tuning, `results/reports/crops_4.2.md`, rows in experiments.csv)**
+- **`min_crop_px` is tested on a box's longer side** (the embedded square is built from it). The first check used
+  the shorter side: even all detections then covered only 8 % of annotated people (standing people are ~2.5x taller
+  than wide); on the longer side all detections cover 0.398 (Gate 3.3 recall 0.407: consistent). The first row
+  (git `bcecd4f`) used the shorter side and is superseded by the row at `7761279`.
+- **`crop_rank: moving_first`** (rule fixed in the script before the run: replaces score_area only if better on the
+  mean of RGB person / vehicle coverage by the detection_then_motion crops): **0.331 vs 0.169** (person 0.148 vs
+  0.047, vehicle 0.514 vs 0.291). On outdoor cameras score x area fills every slot with parked cars.
+- Viewed by Claude (n = 1 frame, 11 images, G424): tiles, padded frame and crops are the right pixels; detection
+  crops = moving car, van, walking person, truck; one motion crop = a car door opening that no detection covers.
+  Detector class vs CLIP text ("a photo of a car / person") on that clip's detection crops: car 611/612, person
+  296/312.
+
+**Open issues**
+- The 4-crop cap limits person coverage to 0.148 (all detections: 0.398). `max_crops_per_frame` stays 4 (CLAUDE.md
+  value); a candidate for a later ablation, not changed here.
+- A motion box around a walking person is larger than the detection (9 px dilation at 640 px), so it is often not
+  marked `dup` (coverage < 0.5): some people are embedded twice in detection_then_motion. Not tuned.
+- **Long-job launch deviation (AUTOPILOT.md 6):** in this headless run `setsid` and `&` both need approval and are
+  denied, so `setsid nohup ... &` cannot be used. Jobs run through the harness background runner instead
+  (`uv run ...` with run_in_background, max 2 h), PID via `--pid-file`; the run stays alive and continues after
+  the job instead of ending with WAITING_JOB. Resumable per clip if the session dies.
+
+---
+
+## Gate rule — operational form, pre-registered (Mon 26 Oct, commit `0eeb29a`, before any dev search result)
+
+The confirmed rule (item 8) says "mean better AND more wins than losses", but dev mixes specific and category
+queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, used at Gates 4.4 / 5.1 / 6.2 / 8.1:
+- each query by its own metric: specific = seconds watched (headline), category = AP@50; a specific query missed by
+  both variants is a tie (their miss costs differ only by list length);
+- "mean better" per family; with both families present the complex variant must be strictly better in one and not
+  worse in the other; adopt = mean better AND wins > losses over all queries.
+- Gate 4.4 order (`scripts/appearance_search.py --ablation` docstring): crop_source none -> motion ->
+  detection_then_motion (progressive), then mean_center on vs off, then frame_mode tiles2 vs pad; each at the
+  choices made before it and the config's other values.
+- Step 4.2 tag rule (`--tag-check` docstring): highest mean AP@50 over templated activity prompts on tuning, and it
+  must win more types than it loses against each other tag; otherwise near-tie -> NEEDS_USER.
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every
