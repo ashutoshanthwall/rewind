@@ -14,7 +14,6 @@ Run from the repo root:
 """
 
 import argparse
-import json
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -24,6 +23,7 @@ import pandas as pd
 import yaml
 
 from rewind.ingest.manifest import connect, load_videos
+from rewind.motion import store
 from rewind.paths import REPO_ROOT, display_path
 from rewind.video import keep_step
 from scripts.index_pass import settings_hash
@@ -40,7 +40,7 @@ def check_clip(v, size, marker: dict, art: Path, cfg: dict, overhang: float) -> 
         problems.append(f"settings {marker['settings']} != current {settings_hash(cfg)}")
     if marker["n_samples"] != n_samples:
         problems.append(f"{marker['n_samples']} samples, expected {n_samples}")
-    sec = pd.read_parquet(art / "motion" / v.camera_id / f"{v.clip}.seconds.parquet")
+    sec = pd.read_parquet(store.seconds_path(art, v))
     if len(sec) != math.ceil(v.n_frames / v.fps) or sec["second"].tolist() != list(range(len(sec))):
         problems.append(f"{len(sec)} per-second rows, expected {math.ceil(v.n_frames / v.fps)}")
     act = sec["activity"].to_numpy()
@@ -60,14 +60,14 @@ def check_clip(v, size, marker: dict, art: Path, cfg: dict, overhang: float) -> 
         if (df["x1"] < -sx).any() or (df["y1"] < -sy).any() or (df["x2"] > w + sx).any() or (df["y2"] > h + sy).any():
             problems.append(f"{what}: boxes outside the {w}x{h} frame by more than {slack_frac:.0%} of its size")
 
-    boxes = pd.read_parquet(art / "motion" / v.camera_id / f"{v.clip}.boxes.parquet")
+    boxes = pd.read_parquet(store.boxes_path(art, v))
     frame_checks(boxes, "motion boxes", 0)
     if len(boxes) != marker["n_motion_boxes"]:
         problems.append("motion box count differs from the marker")
     stats = {"camera": v.camera_id, "modality": v.modality, "activity_mean": float(act.mean()),
              "activity_zero_s": int((act == 0).sum()), "seconds": len(act), "motion_boxes": len(boxes)}
     if dcfg["enabled"] is True:
-        det_path = art / "detections" / v.camera_id / f"{v.clip}.parquet"
+        det_path = store.detections_path(art, v)
         if not det_path.exists():
             problems.append("detections file missing")
             return problems, stats
@@ -102,11 +102,10 @@ def main() -> None:
     leftovers = sorted(str(x.relative_to(args.art)) for x in args.art.rglob("*.tmp"))
     rows, problems, n_done = [], defaultdict(list), 0
     for v in videos:
-        marker_path = args.art / "motion" / v.camera_id / f"{v.clip}.done.json"
-        if not marker_path.exists():
+        if not store.marker_path(args.art, v).exists():
             continue
         n_done += 1
-        probs, stats = check_clip(v, size_of[v.video_id], json.loads(marker_path.read_text()), args.art, cfg,
+        probs, stats = check_clip(v, size_of[v.video_id], store.load_marker(args.art, v), args.art, cfg,
                                   args.overhang)
         problems[v.clip] += probs
         rows.append({"clip": v.clip, **stats})

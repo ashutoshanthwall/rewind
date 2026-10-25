@@ -10,6 +10,9 @@ rank). Every baseline ranks ALL segments, so it always reaches the event (no mis
   - Witness +-w: a witness gives a time t; first every segment overlapping [t - w, t + w] (one camera at a time,
     time order), then the rest as in Sequential. Averaged over camera orders. The witness time is the event's true
     middle (a perfect witness: the baseline's best case). Specific queries only (a category has no single time).
+  - Motion-ranked (step 3.2; today's "motion search"): segments by descending mean MOG2 activity (step 3.1
+    per-second scores, `segment_activity`), all cameras in one ranking (raw activity, no per-camera normalisation).
+    Ties are broken by camera and time. One ranking, used for every query of the split.
 Segments only come from the split's own clips, so no window reaches into another split's footage.
 """
 
@@ -17,6 +20,8 @@ import itertools
 import random
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+
+import numpy as np
 
 from rewind.eval.metrics import Span
 from rewind.ingest.manifest import Video
@@ -61,3 +66,23 @@ def shuffled(segs: Sequence[Span], seed: str) -> list[Span]:
     out = sorted(segs, key=lambda s: (s.camera_id, s.start))  # fixed starting order: the seed alone decides
     random.Random(seed).shuffle(out)
     return out
+
+
+def segment_activity(v: Video, seg: Span, activity: Sequence[float]) -> float:
+    """Mean per-second activity of clip v over seg: clip second i covers [i, min(i + 1, duration)) seconds of the clip
+    and is weighted by its overlap with seg. seg must lie inside the clip."""
+    duration = v.n_frames / v.fps
+    a = (seg.start - v.start_time).total_seconds()
+    b = (seg.end - v.start_time).total_seconds()
+    if seg.camera_id != v.camera_id or a < -1e-6 or b > duration + 1e-6:
+        raise ValueError(f"segment {seg} is not inside clip {v.clip}")
+    if len(activity) != int(np.ceil(duration - 1e-9)):
+        raise ValueError(f"{v.clip}: {len(activity)} per-second scores for {duration:.2f} s")
+    starts = np.arange(len(activity), dtype=float)
+    overlap = np.clip(np.minimum(starts + 1, duration).clip(max=b) - np.maximum(starts, a), 0, None)
+    return float(np.dot(overlap, activity) / overlap.sum())
+
+
+def motion_ranked(scores: dict[Span, float]) -> list[Span]:
+    """Segments by descending activity; ties by camera, then time."""
+    return sorted(scores, key=lambda s: (-scores[s], s.camera_id, s.start))

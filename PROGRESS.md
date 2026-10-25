@@ -1211,6 +1211,39 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 ---
 
+## Step 3.2 — Motion-ranked baseline: PREP DONE, final run waits for the full pass (Sun 25 Oct, ~19:40)
+
+**Done (code + tests, committed)**
+- `rewind/eval/baselines.py`:
+  - `segment_activity`: mean per-second MOG2 activity over a 60 s segment; each clip second is weighted by its
+    overlap with the segment, and a short last second counts only for the part that exists.
+  - `motion_ranked`: segments by descending activity in one ranking over all cameras (raw activity, no per-camera
+    normalisation); ties broken by camera, then time.
+  - Fixed before any result was seen: score = mean (not max); raw activity.
+- `scripts/run_baselines.py`:
+  - adds `motion` as a 4th system: specific queries rank all segments, category queries the RGB segments only (as
+    the other baselines);
+  - `--log-systems` so 3.2 logs only the motion rows (the other three were logged at 2.3);
+  - `--art`; refuses to run if any tuning/dev clip lacks its index_pass done marker.
+- `rewind/motion/store.py`: one place for the index_pass output paths and `load_activity`. `index_pass.py` and
+  `check_index_pass.py` now use it (no change in behaviour; tests pass).
+- Tests: 2 new hand-computed cases in `tests/test_metrics.py` (overlap weighting incl. a partial last second and
+  refusals; ranking and ties, plus seconds-watched on the ranking). Suite: 275 pass.
+- Plumbing trial on the finished G330 clips only (not a result, not logged): segments and scores line up; the full
+  script correctly refuses while clips are missing.
+
+**To do after the pass (exact commands)**
+1. `uv run python -m scripts.check_index_pass --report results/reports/index_pass_check.md` → expect 0 problems.
+2. `uv run python -m scripts.run_baselines --log-systems motion --report results/reports/baselines_3.2.md`
+   → check that sequential / random / witness are identical to `baselines_2.3.md` (deterministic), then write
+   the short comparison table and the "Done when" for 3.2.
+3. PROMPT R on 3.2, PROGRESS entry, commit `phase3.2: ...`.
+
+**Expectation (from 3.1, stated before the run):** whole-frame activity barely separates events from random
+windows (AUC 0.55), so the motion baseline is likely not much better than sequential on busy cameras.
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every

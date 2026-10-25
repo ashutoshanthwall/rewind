@@ -1,4 +1,4 @@
-"""Step 2.3: run the sequential, random and witness +-10 min baselines on the tuning and dev queries.
+"""Steps 2.3 + 3.2: run the sequential, random, witness +-10 min and motion-ranked baselines on tuning and dev.
 
 Never the test split: footage, events and queries come through the guarded accessors (split_video_ids,
 split_event_ids, load_queries), which refuse test. Metrics: rewind/eval/metrics.py; baselines:
@@ -9,12 +9,15 @@ Ground truth:
   - category query: every Kitware (RGB) activity of the type in the split, one instance per activity (pieces cut at
     clip boundaries joined); boundary-flagged activities are don't-care; IR segments are left out of the ranking
     (IR labels are incomplete: no precision/mAP on IR, Gate 0.3).
-Writes one experiments.csv row per (baseline, split) and results/reports/baselines_2.3.md (summary, breakdowns by
-qtype / modality / specificity, per-query tables). A short run (about a minute).
+Motion-ranked (3.2) needs the step 3.1 per-second activity of every clip of the split (artifacts/motion, written by
+scripts/index_pass.py; a clip without its done marker stops the run).
+Writes one experiments.csv row per logged (baseline, split) and a report (summary, breakdowns by qtype / modality /
+specificity, per-query tables). A short run (about a minute).
 
 Run from the repo root:
   uv run python -m scripts.run_baselines
   uv run python -m scripts.run_baselines --no-log   re-render the report only (all inputs are seeded: same numbers)
+  uv run python -m scripts.run_baselines --log-systems motion --report results/reports/baselines_3.2.md   (step 3.2)
 Logging refuses a working tree with uncommitted code (the row's git hash would not identify the code that ran);
 commit first, or pass --allow-dirty for a deliberate exception.
 """
@@ -29,20 +32,23 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from rewind.eval.baselines import camera_orders, segments, sequential, shuffled, witness
+from rewind.eval.baselines import camera_orders, motion_ranked, segment_activity, segments, sequential, shuffled, witness
 from rewind.eval.metrics import (Span, average_precision_at_k, bootstrap_ci, drop_dont_care, instance_recall_at_k,
                                  recall_at_k, seconds_watched)
 from rewind.eval.queries import load_queries
 from rewind.eval.splits import split_event_ids, split_video_ids
 from rewind.experiment_log import git_hash, log_experiment
 from rewind.ingest.manifest import load_videos
+from rewind.motion.store import load_activity
 from rewind.paths import display_path
 from scripts.select_footage import markdown_table
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QUERIES_DIR = REPO_ROOT / "eval" / "queries"
 SPLITS_RUN = ("tuning", "dev")  # never test before step 8.2
-SYSTEMS = ("sequential", "random", "witness")
+SYSTEMS = ("sequential", "random", "witness", "motion")
+NOTES = {"sequential": "mean over all camera orders", "witness": "perfect witness time, specific only",
+         "motion": "segments by mean MOG2 activity (step 3.1), one ranking over all cameras"}
 
 
 def category_truth(conn, split: str, activity_type: str) -> tuple[list[Span], list[Span]]:
@@ -85,15 +91,30 @@ def category_metrics(lists: list[list[Span]], inst: list[Span], dont_care: list[
     return out
 
 
-def run_split(conn, split: str, cfg: dict) -> list[dict]:
+def motion_scores(videos, segment_s: float, art: Path) -> dict[Span, float]:
+    """Mean activity of every segment of the split's clips (each clip's segments from its own per-second scores)."""
+    scores = {}
+    for v in videos:
+        activity = load_activity(art, v)
+        for seg in segments([v], segment_s):
+            scores[seg] = segment_activity(v, seg, activity)
+    return scores
+
+
+def run_split(conn, split: str, cfg: dict, art: Path) -> list[dict]:
     m, b = cfg["metrics"], cfg["baselines"]
     ids = set(split_video_ids(conn, split))
     videos = [v for v in load_videos(conn) if v.video_id in ids]
     segs = segments(videos, b["segment_s"])
+    scores = motion_scores(videos, b["segment_s"], art)
+    if set(scores) != set(segs):
+        raise ValueError(f"{split}: motion segments differ from the baseline segments")
     rgb_cams = {v.camera_id for v in videos if v.modality == "rgb"}
     rgb_segs = [s for s in segs if s.camera_id in rgb_cams]
     footage_s = sum(v.n_frames / v.fps for v in videos)
     orders, rgb_orders = camera_orders(segs), camera_orders(rgb_segs)
+    motion_all = motion_ranked(scores)
+    motion_rgb = [s for s in motion_all if s.camera_id in rgb_cams]
     rows = []
     for q in load_queries(QUERIES_DIR, split):
         base = {k: q[k] for k in ("query_id", "kind", "qtype", "specificity", "modality")} | {"split": split}
@@ -103,12 +124,12 @@ def run_split(conn, split: str, cfg: dict) -> list[dict]:
             gt = Span(q["camera_id"], datetime.fromisoformat(q["start_time"]), datetime.fromisoformat(q["end_time"]))
             t = gt.start + (gt.end - gt.start) / 2
             lists = {"sequential": [sequential(segs, o) for o in orders], "random": reps,
-                     "witness": [witness(segs, t, b["witness_window_s"], o) for o in orders]}
+                     "witness": [witness(segs, t, b["witness_window_s"], o) for o in orders], "motion": [motion_all]}
             for system, ls in lists.items():
                 rows.append(base | {"system": system} | specific_metrics(ls, gt, footage_s, m["recall_k"]))
         else:
             inst, dont_care = category_truth(conn, split, q["activity_type"])
-            lists = {"sequential": [sequential(rgb_segs, o) for o in rgb_orders], "random": reps}
+            lists = {"sequential": [sequential(rgb_segs, o) for o in rgb_orders], "random": reps, "motion": [motion_rgb]}
             for system, ls in lists.items():
                 rows.append(base | {"system": system, "instances": len(inst)}
                             | category_metrics(ls, inst, dont_care, m["category_k"]))
@@ -145,12 +166,12 @@ def report(df: pd.DataFrame, summaries: dict, cfg: dict) -> str:
     fmt = lambda x: x if not isinstance(x, (int, float)) else "—" if pd.isna(x) else \
         str(int(x)) if float(x).is_integer() else f"{x:.3f}"  # strings, so pandas can't turn 12 back into 12.0
     lines = [
-        "# Baselines (step 2.3)", "",
+        "# Baselines (steps 2.3 and 3.2)", "",
         "Generated by `uv run python -m scripts.run_baselines`. Tuning and dev only (test is read once, at 8.2).",
         f"Units: {b['segment_s']} s segments of the split's own footage. Sequential and witness are averaged over every",
         f"camera order; random over {b['random_repeats']} seeded shuffles per query. Witness time = the event's true",
         f"middle, window ±{b['witness_window_s'] // 60} min (a perfect witness: the baseline's best case); specific",
-        "queries only. Hit = overlap on the same camera. Seconds watched = full segments before the first hit + time",
+        "queries only. Motion: segments by mean MOG2 activity (step 3.1), one ranking over all cameras (step 3.2). Hit = overlap on the same camera. Seconds watched = full segments before the first hit + time",
         "into the hit segment until the event starts (baselines rank all footage, so the miss rule never applies).",
         "Category: Kitware RGB activities of the type in the split; IR segments left out (Gate 0.3); IR@k = share",
         f"of instances found in the top k. CIs: {m['ci_level']:.0%} percentile bootstrap over queries "
@@ -182,6 +203,9 @@ def main() -> None:
     parser.add_argument("--report", type=Path, default=REPO_ROOT / "results" / "reports" / "baselines_2.3.md")
     parser.add_argument("--no-log", action="store_true", help="don't append to experiments.csv (report only)")
     parser.add_argument("--allow-dirty", action="store_true", help="log even with uncommitted code changes")
+    parser.add_argument("--log-systems", nargs="+", choices=SYSTEMS, default=list(SYSTEMS),
+                        help="which baselines get experiments.csv rows (3.2: motion only; the others were logged at 2.3)")
+    parser.add_argument("--art", type=Path, default=REPO_ROOT / "artifacts")
     args = parser.parse_args()
     if not args.no_log and not args.allow_dirty and git_hash(REPO_ROOT).endswith("-dirty"):
         raise SystemExit("Uncommitted code changes: commit before a logged run (or --no-log / --allow-dirty)")
@@ -189,21 +213,22 @@ def main() -> None:
     conn = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
 
-    rows = [r for split in SPLITS_RUN for r in run_split(conn, split, cfg)]
+    rows = [r for split in SPLITS_RUN for r in run_split(conn, split, cfg, args.art)]
     df = pd.DataFrame(rows)
     summaries = {}
     for (system, split), g in df.groupby(["system", "split"]):
         summaries[(system, split)] = summarise(g.to_dict("records"), cfg)
     text = report(df, summaries, cfg)
     args.report.write_text(text)  # before logging: a failure here must not leave logged rows without their report
-    for (system, split), metrics in sorted(summaries.items()) if not args.no_log else []:
-        note = {"sequential": "mean over all camera orders", "random": f"mean over "
-                f"{cfg['baselines']['random_repeats']} seeded shuffles", "witness": "perfect witness time, specific only"}
-        log_experiment(split, metrics, f"step 2.3 baseline {system} ({note[system]}); "
-                                      f"{cfg['baselines']['segment_s']} s segments; results/reports/baselines_2.3.md")
+    logged = [(k, v) for k, v in sorted(summaries.items()) if k[0] in args.log_systems] if not args.no_log else []
+    for (system, split), metrics in logged:
+        note = NOTES.get(system, f"mean over {cfg['baselines']['random_repeats']} seeded shuffles")
+        step = "3.2" if system == "motion" else "2.3"
+        log_experiment(split, metrics, f"step {step} baseline {system} ({note}); "
+                                      f"{cfg['baselines']['segment_s']} s segments; {display_path(args.report)}")
     print(text)
     print(f"\nwrote {display_path(args.report)}; "
-          + ("not logged (--no-log)" if args.no_log else f"logged {len(summaries)} rows to results/experiments.csv"))
+          + ("not logged (--no-log)" if args.no_log else f"logged {len(logged)} rows to results/experiments.csv"))
 
 
 if __name__ == "__main__":

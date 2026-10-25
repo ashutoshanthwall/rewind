@@ -7,7 +7,8 @@ Every clip of the manifest (all splits: indexing reads footage, never labels) is
     clip's modality (detection.imgsz.rgb / .ir).
 A decode thread runs ahead of MOG2 + detection (queue of 2 batches), so CPU decoding overlaps GPU detection.
 
-Outputs per clip (boxes in ORIGINAL video pixels; t_s = frame / fps = seconds in the clip = proxy time):
+Outputs per clip (paths: rewind/motion/store.py; boxes in ORIGINAL video pixels; t_s = frame / fps = seconds in the
+clip = proxy time):
   artifacts/motion/<camera>/<clip>.seconds.parquet     second, activity
   artifacts/motion/<camera>/<clip>.boxes.parquet       frame, t_s, x1, y1, x2, y2
   artifacts/detections/<camera>/<clip>.parquet         frame, t_s, class, score, x1, y1, x2, y2   (if enabled)
@@ -36,6 +37,7 @@ import yaml
 from rewind.detect.detectors import COCO_NAMES, make_detector
 from rewind.experiment_log import log_experiment
 from rewind.ingest.manifest import connect, load_videos, sha256_file
+from rewind.motion import store
 from rewind.motion.mog2 import MotionConfig, MotionScorer, per_second, to_size, warmed
 from rewind.paths import REPO_ROOT, display_path
 from rewind.video import keep_step, sampled_frames, scaled_size
@@ -125,31 +127,30 @@ def process_clip(v, size: tuple[int, int], cfg: dict, mcfg: MotionConfig, detect
     elapsed = time.perf_counter() - t0
 
     act = per_second(motion, v.fps, v.n_frames)
-    motion_dir = out_root / "motion" / v.camera_id
-    det_dir = out_root / "detections" / v.camera_id
-    motion_dir.mkdir(parents=True, exist_ok=True)
+    boxes_file = store.boxes_path(out_root, v)
     outputs = {
-        motion_dir / f"{v.clip}.seconds.parquet": pd.DataFrame({"second": range(len(act)), "activity": act}),
-        motion_dir / f"{v.clip}.boxes.parquet": pd.DataFrame(
+        store.seconds_path(out_root, v): pd.DataFrame({"second": range(len(act)), "activity": act}),
+        boxes_file: pd.DataFrame(
             [(m.frame, m.frame / v.fps, *b) for m in motion for b in m.boxes],
             columns=["frame", "t_s", "x1", "y1", "x2", "y2"]),
     }
     if detector:
-        det_dir.mkdir(parents=True, exist_ok=True)
-        outputs[det_dir / f"{v.clip}.parquet"] = pd.DataFrame(
+        outputs[store.detections_path(out_root, v)] = pd.DataFrame(
             det_rows, columns=["frame", "t_s", "class", "score", "x1", "y1", "x2", "y2"]).astype(
             {"score": "float32", "x1": "float32", "y1": "float32", "x2": "float32", "y2": "float32"})
     for path, df in outputs.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         df.to_parquet(tmp, index=False)
         tmp.rename(path)
     marker = {"clip": v.clip, "video_id": v.video_id, "settings": settings_hash(cfg), "n_samples": len(motion),
-              "n_motion_boxes": len(outputs[motion_dir / f"{v.clip}.boxes.parquet"]),
+              "n_motion_boxes": len(outputs[boxes_file]),
               "n_detections": len(det_rows) if detector else None, "decode_width": decoded[0],
               "seconds": round(elapsed, 2), "video_s": v.n_frames / v.fps}
-    tmp = motion_dir / f"{v.clip}.done.json.tmp"
+    final = store.marker_path(out_root, v)
+    tmp = final.with_name(final.name + ".tmp")
     tmp.write_text(json.dumps(marker))
-    tmp.rename(motion_dir / f"{v.clip}.done.json")
+    tmp.rename(final)
     return marker
 
 
@@ -177,7 +178,7 @@ def main() -> None:
 
     todo, done_s = [], 0.0
     for v in videos:
-        marker = args.out_root / "motion" / v.camera_id / f"{v.clip}.done.json"
+        marker = store.marker_path(args.out_root, v)
         if marker.exists():
             old = json.loads(marker.read_text())
             if old["settings"] != settings:

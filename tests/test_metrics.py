@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from rewind.eval.baselines import camera_orders, segments, sequential, shuffled, witness
+from rewind.eval.baselines import (camera_orders, motion_ranked, segment_activity, segments, sequential, shuffled,
+                                   witness)
 from rewind.eval.metrics import (Event, Span, average_precision_at_k, bootstrap_ci, drop_dont_care, first_hit,
                                  instance_recall_at_k, match_events, overlaps, precision_recall, recall_at_k,
                                  seconds_watched)
@@ -175,6 +176,30 @@ def test_witness_window_first_then_the_rest():
     assert len(ranked) == len(segs) == 10
     # GT on B at 250-255: watch A 180-300 (120 s) + B 180-240 (60 s) + 10 s into B 240-300 = 190 s
     assert seconds_watched(ranked, sp("B", 250, 255), footage_s=600) == 190
+
+
+def test_segment_activity_weights_seconds_by_overlap():
+    v = video(1, "A", 0, 4.5)              # 135 frames: seconds 0, 1, 2, 3 full, second 4 covers [4, 4.5)
+    act = [0.0, 1.0, 2.0, 3.0, 4.0]
+    assert segment_activity(v, sp("A", 0, 2), act) == pytest.approx(0.5)            # (0 + 1) / 2
+    # [1.5, 3.25): second 1 x 0.5, second 2 x 1, second 3 x 0.25 -> (0.5 + 2 + 0.75) / 1.75
+    assert segment_activity(v, sp("A", 1.5, 3.25), act) == pytest.approx(3.25 / 1.75)
+    # [4, 4.5): only the half second that exists -> 4.0
+    assert segment_activity(v, sp("A", 4, 4.5), act) == pytest.approx(4.0)
+    with pytest.raises(ValueError, match="not inside clip"):
+        segment_activity(v, sp("A", 3, 6), act)
+    with pytest.raises(ValueError, match="not inside clip"):
+        segment_activity(v, sp("B", 0, 1), act)
+    with pytest.raises(ValueError, match="per-second scores"):
+        segment_activity(v, sp("A", 0, 1), act[:4])
+
+
+def test_motion_ranked_descending_with_deterministic_ties():
+    a1, a2, b1 = sp("A", 0, 60), sp("A", 60, 120), sp("B", 0, 60)
+    assert motion_ranked({a1: 0.1, a2: 0.5, b1: 0.3}) == [a2, b1, a1]
+    assert motion_ranked({b1: 0.0, a2: 0.0, a1: 0.0}) == [a1, a2, b1]    # ties: camera, then time
+    # GT on B 10-20 s: watch A 60-120 (60 s) + 10 s into B 0-60 = 70 s
+    assert seconds_watched(motion_ranked({a1: 0.1, a2: 0.5, b1: 0.3}), sp("B", 10, 20), footage_s=180) == 70
 
 
 def test_random_order_is_seeded_and_complete():
