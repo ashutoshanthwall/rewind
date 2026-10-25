@@ -817,9 +817,15 @@ report reproduces byte-identically; test split refused by both loaders; 83 GB fr
 
 ## Open-issue pass after Phase 2 (Sun 25 Oct) — 8 items
 
-Not a plan step: Ashutosh asked to work through the open issues/VERIFY items one by one before Phase 3. Checks ran
-as throwaway scripts in the session scratchpad (not committed); numbers below come from those runs. No code,
-config or data changed (PROGRESS.md only).
+Not a plan step: Ashutosh asked to work through the open issues/VERIFY items one by one before Phase 3. No pipeline
+code, config or data changed. The checks first ran as scratch scripts; they were then moved into `scripts/` (second
+commit) and re-run from there, reproducing the numbers below (only an uncited G436 median moved 4.6 → 4.5 px by
+rounding). Run from the repo root:
+- item 2: `uv run python -m scripts.check_camera_views --out <folder>` (CSV, contact sheet, one image per flagged pair)
+- item 4: `uv run python -m scripts.check_centre_crop --pretrained laion2b_s34b_b88k datacomp_xl_s13b_b90k`
+  (and `--model ViT-B-16-quickgelu --pretrained openai`); verifies each tag's transform, then the tuning numbers
+- item 6: `uv run python -m scripts.check_contrib_timing`
+Items 3 and 5 were one-off inline queries / `curl` lookups (not scripted); their sources are named in each item.
 
 **1. Independent hand check of the headline metric — done by Ashutosh.** New toy case (2 cameras × 300 s, 60 s
 segments, GT on B 130-140 s): sequential 430 s, witness (t = 100 s, ±60 s) 310 s, miss case 690 s, short list 35 s.
@@ -943,10 +949,10 @@ the ablation (at 4.4).**
     no claims (e.g. RGB vs IR on test: 4 IR specific queries).
   - Gate comparisons (4.4, 5.1, 6.2, 8.1) are **paired per query**: report wins / ties / losses and a paired
     bootstrap CI of the difference. Needs a small addition to `rewind/eval/metrics.py` (paired bootstrap) at 4.4.
-  - **PROPOSED — Ashutosh to confirm before Gate 4.4:** adopt the more complex variant only if its mean is better
+  - **CONFIRMED (Ashutosh, 25 Oct) — gate decision rule:** adopt the more complex variant only if its mean is better
     **and** it wins on more queries than it loses; otherwise keep the simpler one (CLAUDE.md 8.1: "if two are close,
-    pick the simpler one"). With n = 6-7 at Gates 5.1/6.2, a CI that excludes 0 is not required (it would almost
-    never happen) but is reported.
+    pick the simpler one"). The paired bootstrap CI of the difference is always reported but is **not** required
+    to exclude 0 (with n = 6-7 at Gates 5.1/6.2 it almost never would).
 
 **Process notes**
 - Items 3 and 4 read split labels with raw SQL joins on `blocks.split` in scratch scripts, not through the guarded
@@ -959,7 +965,8 @@ the ablation (at 4.4).**
 - Item 6 used only clips outside the selection; items 7-8 used numbers already recorded in 2.1/2.2.
 
 **Verify by hand**
-- Contact sheets (scratchpad, not kept): G340 morning vs afternoon view, G336 03-07 17:00.
+- Contact sheets: re-create with `scripts.check_camera_views --out <folder>` (`camera_views_sheet.jpg`; G340 and
+  G336 changes are among the `flagged_*.jpg` before/after pairs).
 - Read one model card's "Out-of-Scope Use" section yourself, e.g.
   https://huggingface.co/laion/CLIP-ViT-B-16-laion2B-s34B-b88K
 
