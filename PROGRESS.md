@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: done (1.3 5-event check passed); next: Phase 2 — 2.1 Splits**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: 2.1 splits done (draw 2); next: 2.2 query worksheets, then Gate 2.2**
 
 ---
 
@@ -562,3 +562,97 @@ Conclusion: label frame numbers = proxy playback time (frame / 30) for both Kitw
 
 **Verify by hand**
 - Read `results/reports/throughput.md` (2 min): the run-to-run table and the projection table.
+
+---
+
+## Step 2.1 — Splits (Sun 25 Oct)
+
+**Done**
+- `rewind/eval/splits.py`: sessions → ~30-min blocks → constrained random assignment → boundary-event flags; guarded
+  accessors `split_video_ids` / `split_event_ids` (test refused unless `allow_test=True`, step 8.2 only).
+- `scripts/make_splits.py`: writes DB tables `blocks`, `video_blocks`, `event_splits`, the committed split
+  `eval/splits/blocks.csv` + `clips.csv`, and `results/reports/splits_2.1.md`. Refuses to rerun without `--rebuild`,
+  and refuses `--rebuild` once any `eval/queries/worksheet_*.csv` or `HASHES` exists.
+- Config section `splits:` (seed 21, block target 30 min, 15/15/70 ± 5 %, minimum counts, boundary pad 2 s).
+- `tests/test_splits.py`: 37 tests (28 functions, some parametrised): hand-computed toy cases, an end-to-end run of the
+  script on a toy DB (boundary flags, rebuild guards, determinism), and checks on the committed split: no block in two
+  splits, no wall-clock overlap between blocks of different sessions and splits, every clip in one block, DB = CSV,
+  stored boundary flags = recomputed. Suite: 209 pass.
+
+**Method**
+- 9 sessions of continuous *selected* footage (20-50 min) → 10 blocks (only the 50-min 03-11 morning session is cut,
+  at 11:40; both halves ended up in test). Blocks of different splits are ≥ 299.8 s apart (03-07 tuning ends
+  17:15:00.23, test starts 17:20:00; next 593 s on 03-15) → 0 boundary-flagged events with the 2 s pad.
+- All 55,980 assignments (3 splits non-empty) are checked against the requirements; seed 21 picks one uniformly.
+
+**PROMPT R (review)** — 4 review lenses + a skeptic per finding (mutation testing, independent recompute from the DB,
+timestamps/test-split access, silent failures/config). No finding changed the split; all were LOW. Fixed:
+- a crash in the report when a split has no activities (found by the new end-to-end test);
+- 16 surviving mutations → new tests: midpoint rule, each minimum on the test split, inclusive edges, running
+  session end, the script end to end; `target_fraction` now must name all 3 splits and sum to 1;
+- the refusal guard now ignores empty tables left by a failed run; `block_id` uniqueness asserted;
+- wrong claims: "sessions are recording breaks" (docstring), "≥ 5 min apart" (here), "3^12 is seconds" (config).
+- After the fixes the split was rebuilt: `blocks.csv` / `clips.csv` byte-identical to draw 2.
+
+**Draw history (honest record)**
+- **Draw 1** (requirements without the camera rule; 38 valid): tuning = 03-11 13:50 block; dev = 03-07 16:50 +
+  03-15 14:50; test = the other 7. Independent review found **dev had 23 G330 (indoor gym) activities vs 4,669 in
+  test**: G330 is busy only on 03-11 (930-1,475 activities per block) and almost idle on other dates (2-19).
+  The "≥ 25 activity types" check never bound (every block has 27-32 types), so it gave no protection.
+- **Ashutosh chose** (25 Oct) to add `min_activities_per_rgb_camera: 20` for dev and test (every RGB camera's scene
+  in dev and test), after seeing draw 1 but **before any query, worksheet or search existed**, and without seeing
+  what the new rule would draw.
+- **Draw 2 = the split** (23 valid, same seed 21): tuning = 03-07 16:50 + 03-15 14:50 (4.83 h, 19.3 %);
+  dev = 03-11 13:50 (3.50 h, 14.0 %); test = the other 7 blocks (16.67 h, 66.7 %).
+
+**Decisions**
+- **Blocks follow sessions** (deviation from "split the window into 30-min blocks"): the selection is 9 separate
+  sessions on 3 dates (Gate 0.3), not one window. Each session is cut into max(1, round(L / 30 min)) blocks on clip
+  boundaries; each clip goes to the block holding its midpoint, so all cameras of a 5-min slot stay together.
+- **Constrained random assignment:** every assignment is checked against fixed requirements (15/15 ± 5 % of
+  camera-hours for tuning/dev; per split ≥ 25 types, ≥ 20 RGB vehicle starts and stops, ≥ 10 labelled IR activities;
+  dev and test ≥ 20 activities on every RGB camera; Gate 0.3: tuning's evaluation-level share ≤ overall). Seed 21
+  picks uniformly among the valid ones. Only label metadata is used, never search results. Binding in practice:
+  the fraction band, the IR minimum, the Gate 0.3 rule and the camera rule.
+- **Boundary events** (may be visible in another split: span ± 2 s overlaps another split's block, or a cut
+  activity's pieces in two splits) are flagged in `event_splits.boundary`, not deleted. Currently 0.
+- **Test-split guard:** `split_video_ids` / `split_event_ids` raise `PermissionError` for test unless
+  `allow_test=True` (step 8.2 only). Later steps must read splits through them, not raw SQL.
+- **The committed split is `eval/splits/*.csv`** (data/ is not in git); a test checks DB = CSV.
+- Not an experiment: no row in `experiments.csv`.
+- Reviews from now on (Ashutosh, 25 Oct): inline for routine steps; the multi-agent review only at Gate 2.2, 8.1 and
+  8.2 (the 2.1 review took ~42 min).
+
+**Key numbers (draw 2)** — activities (cut activities counted once): tuning 3,550 / dev 1,811 / test 11,121;
+RGB vehicle_starts/stops 350/351 · 40/42 · 590/607; IR activities 33 · 44 · 98 (IR vehicle start/stop 8 · 8 · 10);
+G330 activities 23 · 1,296 · 4,669; types 32 · 31 · 35.
+
+**Open issues (draw 2)**
+- **Dev is the light-traffic, gym-heavy regime**: G330 72 % of dev activities; G340 only 21 activities; 82 RGB
+  vehicle start/stop events (test 1,197, mostly dense 03-07/03-15 traffic). Gate 6.2 dev precision will not see
+  traffic queues; report 6.1/8.2 event-rule results per camera.
+- **Dev labels are mostly training-level** (157 evaluation-level vs 1,610 training-level activities). The Gate 0.3
+  rule was implemented only as "tuning not more evaluation-level than overall" (tuning 36 % ≤ 48 %).
+- Tuning has dense traffic (good for 6.1 thresholds) but almost no indoor activity (G330 23): the 4.1 dedup sweep
+  and 7.4 fusion weights are tuned on outdoor scenes only.
+- Query counts per split will be small (~15/15/70 of ~60): set per-split quotas by qtype/IR at 2.2 (critique).
+- `min_activity_types` never binds; kept as a check only.
+- **Session gaps are not recording breaks.** On 03-07 MEVA has (unannotated, unselected) clips for 17:10-17:20, so the
+  16:50 (tuning) and 17:20 (test) sessions are one continuous recording ~5 min apart; a scripted scenario could carry
+  across. Separation there is only the time gap.
+- **Step 2.3 / 3.2:** the witness ±10 min window (600 s) is longer than the smallest gap between splits (299.8 s):
+  clip every time window to the query split's own footage (`split_video_ids`), or it reaches into test footage.
+
+**Rules for step 2.2**
+- Sample worksheet events through `split_event_ids` (boundary-flagged events left out); test-split worksheets are
+  the one place before 8.2 that may pass `allow_test=True`, to write queries, never to search.
+- Make sure dev gets enough `action` and `vehicle_event` queries for Gates 5.1 / 6.2 (dev has only 82 RGB vehicle
+  start/stop events, all light traffic) and test enough IR queries for the RGB vs IR breakdown.
+- Store `(clip, src_ids)` with each query, not just `event_id` (see 1.3).
+
+**Verify by hand**
+- Open `results/reports/splits_2.1.md`: the per-split table should match the key numbers above; the per-block table
+  shows which blocks are in dev (03-11 13:50) and tuning (03-07 16:50, 03-15 14:50).
+- Read `rewind/eval/splits.py` module docstring and `meets_requirements`: be able to explain why blocks follow
+  sessions, why the assignment is random among valid ones, and why draw 1 was replaced (camera rule).
+- `uv run pytest -q tests/test_splits.py` → 37 passed.

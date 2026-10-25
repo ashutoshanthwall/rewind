@@ -36,6 +36,28 @@ annotations:
   # camera (back to back within ingest.max_name_duration_diff_s) get one group_id if their boxes at the join overlap
   # this much. Type alone would link wrongly: ~1/3 of end-of-clip pieces have no overlapping box in the next clip.
   boundary_merge_min_box_iou: 0.5
+splits:
+  # step 2.1 (rewind/eval/splits.py, scripts/make_splits.py). Time blocks of all cameras -> tuning / dev / test.
+  # Sessions are continuous footage (clips touching within ingest.max_name_duration_diff_s).
+  seed: 21                       # fixed before the first run; never re-rolled to get a "nicer" split
+  block_target_min: 30           # CLAUDE.md 1.10: ~30-min blocks; a session of L min gives max(1, round(L / 30)) blocks
+  target_fraction: {tuning: 0.15, dev: 0.15, test: 0.70}   # of footage hours (camera-hours), CLAUDE.md 1.10
+  max_fraction_diff: 0.05        # tuning and dev each within 15% +/- 5%. One block is 8-14% of the footage, so a
+                                 # tighter band leaves few or no valid assignments
+  # Every split needs (counted per activity, a cut activity once):
+  min_activity_types: 25         # "a mix of activity types": 35 types occur, every block alone has 27-32
+  min_vehicle_starts: 20         # RGB (Kitware); event-rule tuning (6.1) and vehicle_event queries need them
+  min_vehicle_stops: 20
+  min_ir_activities: 10          # labelled IR (third-party, recall only); IR queries and the RGB vs IR breakdown
+  # Every RGB camera's scene must be in dev and test (Kitware activities per camera). Added after draw 1 (PROGRESS
+  # 2.1): the indoor gym G330 has ~930-1,475 activities per 03-11 block but 2-19 per block on other dates, and draw 1
+  # gave dev 23 G330 activities vs 4,669 in test. Dev decides the gates for test, so it must show the same scenes.
+  min_activities_per_rgb_camera: 20
+  camera_coverage_splits: [dev, test]
+  max_blocks_enumerated: 12      # all 3^n assignments are checked: 10 blocks (56k) ~5-9 s; 12 (519k) ~1-2 min
+  # An event within this many seconds of a block of another split may be visible there too (camera clocks are
+  # accurate to about +/- 1 s each, so two cameras can disagree by up to 2 s). Flagged, not deleted.
+  boundary_pad_s: 2.0
 sampling:
   appearance_fps: 1
   max_gap_s: 10
