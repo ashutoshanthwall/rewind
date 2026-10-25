@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added · Phase 3: 3.1 test ✔ · Gate 3.3 ✔ (YOLOX-s) · full pass running (results/logs/index_pass.log) · 3.2 after the run**
+Deadline: Fri 30 Oct 2026 · Current phase: **3 — Motion + detection: done** (3.1 ✔ · Gate 3.3 ✔ YOLOX-s · full pass ✔ 300/300 · 3.2 ✔) · next: Phase 4
 
 ---
 
@@ -1241,6 +1241,106 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 **Expectation (from 3.1, stated before the run):** whole-frame activity barely separates events from random
 windows (AUC 0.55), so the motion baseline is likely not much better than sequential on busy cameras.
+
+---
+
+## Phase 3 full pass — finished (Sun 25 Oct, ~23:17) — step 3.4 "Done when" met
+
+- Finished in **4.47 h** for 300 clips (25.0 h of video, 5.6x realtime); smoke-test projection was 5.1 h.
+  The experiments row was logged by the script (split `none`, settings `afe8a9f91a22f367`).
+  - 450,206 samples, 1,430,491 motion boxes, 5,511,258 detections.
+  - Disk: `artifacts/motion` 18 MB, `artifacts/detections` 89 MB.
+- Detector recorded in config: YOLOX-s, Apache-2.0, weights sha256 in `detection.weights_sha256`, RGB 1280 / IR 640.
+- **Final output check** (`results/reports/index_pass_check.md`): 300/300 clips, no leftover `.tmp`.
+  - **1 flag, reviewed, not a pipeline error.** One G340 clip has 50 `car` boxes running up to 479 px below the
+    frame. Viewed by Claude (n = 2): a car parked right in front of the camera is cut by the frame edge, and YOLOX
+    predicts its full extent past the edge. The box around the visible car fits, so the scale-back is correct.
+    Every other clip overhangs ≤ 28 px. The tolerance is kept, so a real scaling bug would still trip it.
+  - **Detection counts per camera / class** (the 3.4 "Done when"):
+
+    | camera | mod | person | car | truck | bus | motorcycle | bicycle | total |
+    |---|---|---|---|---|---|---|---|---|
+    | G330 | rgb | 724,253 | 7,059 | 0 | 0 | 2 | 83 | 731,397 |
+    | G336 | rgb | 102,847 | 854,343 | 79,491 | 961 | 128 | 2,554 | 1,040,324 |
+    | G340 | rgb | 114,188 | 797,860 | 106,094 | 1,651 | 43 | 831 | 1,020,667 |
+    | G424 | rgb | 137,315 | 1,626,385 | 238,828 | 9,762 | 317 | 978 | 2,013,585 |
+    | G436 | rgb | 289,084 | 329,720 | 34,259 | 3,399 | 2,445 | 4,289 | 663,196 |
+    | G474 | ir | 14,855 | 23,076 | 3,498 | 50 | 98 | 512 | 42,089 |
+
+    Most `car` detections on the outdoor cameras are parked cars, re-detected on every sample. IR has ~25x fewer
+    detections per clip than RGB, which matches the 3.3 finding that IR objects are small at 640.
+- **Second static false positive.** G330 03-15 15:55 has 0 motion but a `person` on every sample. Viewed by Claude
+  (n = 1): a bag at the bottom edge of the gym floor, scores 0.30-0.53.
+
+---
+
+## Step 3.2 — Motion-ranked baseline (Sun 25 Oct, 23:45)
+
+- Ran `scripts.run_baselines --log-systems motion` on tuning and dev → `results/reports/baselines_3.2.md`; 2 rows
+  logged (motion only). **Sequential / random / witness reproduce `baselines_2.3.md` exactly** (134 of 134
+  table rows identical), so adding motion changed nothing else.
+- Comparison (specific queries: median seconds watched before the first hit and Recall@10; category: mAP@10):
+
+  | split | metric | sequential | random | witness ±10 min | **motion** |
+  |---|---|---|---|---|---|
+  | tuning (6 spec / 3 cat) | median s watched | 8,091 | 9,063 | 3,126 | **9,734** |
+  | | R@10 | 0.056 | 0.027 | 0.056 | **0** |
+  | | mAP@10 | 0.350 | 0.286 | — | **0.487** |
+  | dev (12 spec / 5 cat) | median s watched | 5,932 | 6,413 | 3,237 | **1,513** (CI 179–2,985) |
+  | | R@10 | 0.083 | 0.050 | 0.083 | **0.333** |
+  | | mAP@10 | 0.103 | 0.088 | — | **0.178** |
+
+- **Reading (diagnosis on tuning and dev, not tuning anything):**
+  - The dev win is partly a **camera effect**, not motion picking out events. The ranking is global on raw activity.
+    In dev, the indoor gym G330 is the busiest camera: 16 of the top 20 segments are G330 (the other 4 are G474 IR),
+    and 6 of the 12 dev specific queries are G330 events. Within G330, those events rank 1, 4, 13, 17, 25 and 33 of
+    35 segments, i.e. near random.
+  - The two dev IR queries (dev-s05, dev-s09) both sit in the same G474 segment at global rank 2. That is what
+    gives the 62 s results.
+  - In tuning, G340 holds 10 of the top 20 segments, but no tuning query is on G340, so motion is the worst system
+    on time watched.
+  - Category: motion helps mainly for one activity, dev-c03 (231 instances, AP@10 0.89). For the other four dev
+    category queries it puts 0 instances in its top 10.
+  - My expectation stated before the run ("likely not much better than sequential") was **wrong for dev and right
+    for tuning**. The baseline is high-variance and depends on which cameras the queries fall on.
+- **Implication:** motion is the strongest baseline on dev, so Rewind must beat a median of ~1,500 s there, not
+  ~3,200 s (witness). The 1.10 rules are unchanged; no baseline is re-defined after seeing results. Step 8.2
+  reports all four baselines on test as planned.
+- **Self-review (PROMPT R, inline):**
+  - No silent failures: missing markers and segment mismatches raise.
+  - No new tunables: segment length comes from `baselines.segment_s`.
+  - Tests use hand-computed answers.
+  - Only tuning and dev are read: the split loop is hard-coded to (tuning, dev); `index_pass` reads footage of
+    every split but no labels.
+  - The overlap weighting for partial seconds is tested.
+  - Nothing found to fix. Suite: **275 pass**.
+- **Open issues carried forward:**
+  - (a) **4.2 must clip detection boxes to the frame** before cropping.
+  - (b) **Static false positives** (bleacher `car`s, a bag as `person`) and many parked-car re-detections. 4.1
+    dedup ("detections unchanged") and 4.2 crop ranking should handle these; measuring repeated static boxes per
+    camera is still to do (cheap, at 4.1).
+  - (c) `motion.min_box_area_px` is still the untuned smoke value.
+  - (d) Detector precision is not measured; IR quality has only been looked at by eye.
+
+---
+
+## Phase 3 summary (Sun 25 Oct)
+
+- **Order (Ashutosh):** 3.1 test → 3.3 gate → one combined full pass for 3.1 + 3.4 → 3.2.
+- **3.1 MOG2:** whole-frame activity barely separates labelled events from random windows (AUC 0.55, because events
+  cover 70–99 % of the time), but box-local activity does (AUC 0.81–0.87). 20x realtime alone.
+- **Gate 3.3:** YOLOX-s (Apache-2.0), RGB 1280 / IR 640, chosen by Ashutosh after the literal "<50 %" clause was
+  ambiguous (RGB recall: person 0.41, vehicle 0.83; IR recall unmeasurable against the loose CMU boxes). YOLOv8 was
+  never ≥ 5 points better. The YOLOX code is vendored (no new pip dependency).
+- **Full pass:** 300 clips, 25 h of video, in 4.47 h. Output check: 0 pipeline errors, 1 reviewed flag.
+- **3.2:** motion baseline beats the other baselines on dev (median 1,513 s) and loses on tuning (9,734 s). The dev
+  win comes largely from the busiest camera holding half the dev queries.
+- **Process lessons:**
+  - The full pass ran single-core-bound at ~55 % GPU because the pipeline wasn't profiled before launch.
+    Ashutosh chose to leave it.
+  - A PID-file mistake (it recorded the launcher, not the job) and three wrong clock times in PROGRESS were fixed.
+- **Next: Phase 4** (`/clear` + PROMPT S recommended first). 4.1 dedup sweep on tuning, then 4.2 embeddings, with
+  open issues (a)–(c) above.
 
 ---
 
