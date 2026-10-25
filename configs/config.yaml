@@ -95,9 +95,16 @@ sampling:
   max_gap_s: 10
   dedup_motion_pixel_thresh: TBD    # step 4.1, tuning split
 motion:
+  # step 3.1 (rewind/motion/mog2.py). OpenCV MOG2 on grayscale frames scaled down to downscale_width.
   fps: 5
   downscale_width: 640
-  min_box_area_px: TBD
+  history_frames: 500          # OpenCV default; = 100 s at 5 fps (a stopped object fades into the background)
+  var_threshold: 16            # OpenCV default
+  detect_shadows: true         # shadow pixels are detected and NOT counted as foreground
+  warmup_s: 5                  # first 5 s of samples train a fresh model per clip, then the clip runs from frame 0
+  open_kernel_px: 3            # opening removes speckle before scoring
+  merge_dilate_px: 9           # dilation merges nearby blobs of one object into one box (at 640 px wide)
+  min_box_area_px: 100         # in analysis-frame pixels (~10x10 at 640 px wide); not tuned (3.1 smoke value)
 detection:
   enabled: TBD                      # Gate 3.3
   model: TBD                        # yolov8n/s or yolox_s/m
@@ -139,3 +146,7 @@ search:
   max_clip_s: 60
   clip_rank: mean_top3
   context_s: 5
+motion_check:
+  # step 3.1 check (scripts/check_motion.py): activity in labelled events vs random windows of the same length
+  seed: 31
+  random_windows_per_event: 20

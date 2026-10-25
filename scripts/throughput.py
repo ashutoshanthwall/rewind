@@ -34,6 +34,7 @@ from PIL import Image
 
 from rewind.experiment_log import DEFAULT_CSV, log_experiment
 from rewind.ingest.manifest import connect, load_videos
+from rewind.video import keep_step
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,14 +56,6 @@ def pick_clips(videos: list, modality: str, n: int, seed: int) -> list:
             if by_camera[cam] and len(picked) < n:
                 picked.append(by_camera[cam].pop())
     return picked
-
-
-def keep_step(fps: float, rate: float) -> int:
-    """Keep every k-th decoded frame to sample `rate` frames per second; k must be a whole number."""
-    k = fps / rate
-    if k != int(k) or k < 1:
-        raise ValueError(f"{rate} fps is not a whole-frame step at {fps} fps")
-    return int(k)
 
 
 def decode(path: Path, n_frames: int, thread_type: str, step: int | None = None, width: int | None = None,
