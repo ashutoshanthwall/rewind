@@ -796,6 +796,17 @@ HASHES: queries_tuning 6c70f93c…, queries_dev caea1717…, queries_test b033a9
 - Small samples: 6 tuning and 12 dev specific queries → wide CIs; breakdown cells have n = 2-5.
 - Motion-ranked baseline: step 3.2.
 
+**Health check after Phase 2** (25 Oct, read-only): 245 tests pass; 300 originals read-only, 3 random re-hashed OK;
+300 proxies with equal frame counts; every event has a split, every video a block; 7/7 query hashes OK; baseline
+report reproduces byte-identically; test split refused by both loaders; 83 GB free. Found and fixed (commit
+"phase2.3: fix"):
+- `run_baselines`, `build_events`, `review_queries` crashed at their final print when given an output path outside
+  the repo (`Path.relative_to`), after outputs/log rows were written → `rewind/paths.display_path`; test added.
+  `run_baselines` now writes its report before logging.
+- The 6 step-2.3 rows carry git `979c37e-dirty` (logged before the commit; metrics.py changed afterwards, the
+  re-run is byte-identical, so they reproduce from `9579b17`). `run_baselines` now refuses to log with uncommitted
+  code (`--allow-dirty` to override): future rows name the exact commit. Suite: 246 pass.
+
 **Verify by hand**
 - Hand check of one toy case (witness ordering, expected 190 s): **done by Claude Code at Ashutosh's request**, not by
   Ashutosh — an independent hand check is still open if wanted:

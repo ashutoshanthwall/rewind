@@ -15,6 +15,8 @@ qtype / modality / specificity, per-query tables). A short run (about a minute).
 Run from the repo root:
   uv run python -m scripts.run_baselines
   uv run python -m scripts.run_baselines --no-log   re-render the report only (all inputs are seeded: same numbers)
+Logging refuses a working tree with uncommitted code (the row's git hash would not identify the code that ran);
+commit first, or pass --allow-dirty for a deliberate exception.
 """
 
 import argparse
@@ -32,8 +34,9 @@ from rewind.eval.metrics import (Span, average_precision_at_k, bootstrap_ci, dro
                                  recall_at_k, seconds_watched)
 from rewind.eval.queries import load_queries
 from rewind.eval.splits import split_event_ids, split_video_ids
-from rewind.experiment_log import log_experiment
+from rewind.experiment_log import git_hash, log_experiment
 from rewind.ingest.manifest import load_videos
+from rewind.paths import display_path
 from scripts.select_footage import markdown_table
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -178,7 +181,10 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "configs" / "config.yaml")
     parser.add_argument("--report", type=Path, default=REPO_ROOT / "results" / "reports" / "baselines_2.3.md")
     parser.add_argument("--no-log", action="store_true", help="don't append to experiments.csv (report only)")
+    parser.add_argument("--allow-dirty", action="store_true", help="log even with uncommitted code changes")
     args = parser.parse_args()
+    if not args.no_log and not args.allow_dirty and git_hash(REPO_ROOT).endswith("-dirty"):
+        raise SystemExit("Uncommitted code changes: commit before a logged run (or --no-log / --allow-dirty)")
     cfg = yaml.safe_load(args.config.read_text())
     conn = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -189,14 +195,14 @@ def main() -> None:
     for (system, split), g in df.groupby(["system", "split"]):
         summaries[(system, split)] = summarise(g.to_dict("records"), cfg)
     text = report(df, summaries, cfg)
+    args.report.write_text(text)  # before logging: a failure here must not leave logged rows without their report
     for (system, split), metrics in sorted(summaries.items()) if not args.no_log else []:
         note = {"sequential": "mean over all camera orders", "random": f"mean over "
                 f"{cfg['baselines']['random_repeats']} seeded shuffles", "witness": "perfect witness time, specific only"}
         log_experiment(split, metrics, f"step 2.3 baseline {system} ({note[system]}); "
                                       f"{cfg['baselines']['segment_s']} s segments; results/reports/baselines_2.3.md")
-    args.report.write_text(text)
     print(text)
-    print(f"\nwrote {args.report.relative_to(REPO_ROOT)}; "
+    print(f"\nwrote {display_path(args.report)}; "
           + ("not logged (--no-log)" if args.no_log else f"logged {len(summaries)} rows to results/experiments.csv"))
 
 

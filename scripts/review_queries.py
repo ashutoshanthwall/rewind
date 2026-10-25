@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 
 from rewind.eval.splits import SPLITS
+from rewind.paths import display_path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 QUERIES_DIR = REPO_ROOT / "eval" / "queries"
@@ -52,7 +53,7 @@ section{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px;ma
 Check: is it the right activity, could a witness have seen these details, is the specificity level right?</p>
 {''.join(cards)}</body></html>"""
     args.out.write_text(page)
-    print(f"wrote {args.out.relative_to(REPO_ROOT)}: open it in a browser (file://{args.out})")
+    print(f"wrote {display_path(args.out)}: open it in a browser (file://{args.out.resolve()})")
 
 
 if __name__ == "__main__":

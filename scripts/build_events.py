@@ -28,6 +28,7 @@ from rewind.ingest.annotations import (VEHICLE_START_STOP, Event, activity_names
                                        load_json, load_kpf, merge_contrib, parse_contrib_json,
                                        parse_kitware_activities, parse_kitware_types, piece, read_geom)
 from rewind.ingest.manifest import connect, load_videos
+from rewind.paths import display_path
 from scripts.build_manifest import ANNOT_ROOT, KITWARE_SOURCES, MEVA_REPO
 from scripts.select_footage import markdown_table
 
@@ -253,7 +254,7 @@ def main() -> None:
         text = report(conn, stats, time.monotonic() - t0)  # inside the transaction: a report error rolls back
     args.report.write_text(text)
     print(text)
-    print(f"\nwrote {args.report.relative_to(REPO_ROOT)}")
+    print(f"\nwrote {display_path(args.report)}")
 
 
 if __name__ == "__main__":

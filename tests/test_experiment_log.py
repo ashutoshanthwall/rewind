@@ -156,3 +156,10 @@ def test_mismatched_header_raises_and_leaves_file_untouched(repo):
     with pytest.raises(ValueError, match="header"):
         log(repo)
     assert path.read_text() == "timestamp,split,metrics\n"
+
+
+def test_display_path_inside_and_outside_repo(tmp_path):
+    # inside the repo -> relative; outside (e.g. a scratch dir) -> as given, no ValueError (was a crash, 25 Oct)
+    from rewind.paths import REPO_ROOT, display_path
+    assert display_path(REPO_ROOT / "results" / "reports" / "x.md") == "results/reports/x.md"
+    assert display_path(tmp_path / "x.md") == str(tmp_path / "x.md")
