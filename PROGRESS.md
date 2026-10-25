@@ -1188,7 +1188,7 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 ---
 
-## Full pass — mid-run output check (Sun 25 Oct, ~19:35)
+## Full pass — mid-run output check (Sun 25 Oct, ~19:12)
 
 - `scripts/check_index_pass.py` (read-only, reusable for the final check), with a test in `tests/test_index_pass.py`.
   For every finished clip it checks: files and marker present, settings hash, sample and per-second counts, the
