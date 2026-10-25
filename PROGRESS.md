@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **4 — Appearance index** (autopilot) · 4.1 ✔ dedup 1.0 · 4.2 in progress
+Deadline: Fri 30 Oct 2026 · Current phase: **4 — Appearance index** (autopilot) · 4.1 ✔ dedup 1.0 · 4.2 waiting: pretrained tag near-tie (NEEDS_USER)
 
 ---
 
@@ -1485,6 +1485,29 @@ never keeps a frame: detection changes + the 10 s max gap decide alone (a grid v
   value); a candidate for a later ablation, not changed here.
 - A motion box around a walking person is larger than the detection (9 px dilation at 640 px), so it is often not
   marked `dup` (coverage < 0.5): some people are embedded twice in detection_then_motion. Not tuned.
+- **Tag-check embeddings (tuning, 3 tags in one decode):** 58 clips, 17,436 candidates -> **10,974 kept** (exactly
+  the 4.1 sweep's count at 1.0: the online `Deduper` matches the sweep), 102,112 vectors per tag (9.3 per kept
+  frame), 24.2 min, peak VRAM 2,863 MiB with 3 models loaded. Experiments row at `9fb1566`.
+
+**Pretrained tag — NEAR-TIE, NEEDS_USER** (`results/reports/pretrained_4.2.md`, 6 rows at `7d34b10`; agreed method
+item 5, rule fixed in `--tag-check` before the run). 29 Kitware types with >= 10 tuning activities, templated
+prompts ("a person opens vehicle door"), main variant (tiles2, detection_then_motion, centered on tuning vectors):
+
+| tag | type mAP@50 centered (decides) | mAP@10 centered | mAP@50 / @10 raw | 6 specific: R@10, median s | 3 category mAP@10 |
+|---|---|---|---|---|---|
+| laion2b_s34b_b88k | **0.105** | 0.161 | 0.105 / 0.155 | 0.167, 9,628 | 0.173 |
+| datacomp_xl_s13b_b90k | 0.094 | 0.141 | 0.111 / 0.189 | 0.167, 9,391 | 0.224 |
+| openai (quickgelu) | 0.080 | 0.130 | 0.078 / 0.122 | 0.000, 567 | 0.122 |
+
+- laion2b has the best mean but vs datacomp_xl wins 12 types, ties 1, **loses 16** (mean diff +0.012, 95 % CI
+  [−0.009, +0.035]) -> the rule's "wins on more types than it loses" fails -> near-tie. vs openai: 17/0/12, +0.025
+  [+0.008, +0.046]. laion2b is much better on vehicle_starts/stops (0.35/0.41 vs 0.19/0.20) and
+  person_opens_vehicle_door; datacomp_xl on door/phone/pick-up types. openai is behind on both counts.
+- Retrieval is weak on tuning for every tag (type mAP@50 ~0.1; 2-3 of the 6 specific tuning queries are missed by
+  every tag within the top 200 vectors). Centering helps the specific queries (median 9.6k vs 18.3k s, laion2b) but
+  not the category means. Noted for 4.4; nothing tuned on it.
+
+**Open issues**
 - **Long-job launch deviation (AUTOPILOT.md 6):** in this headless run `setsid` and `&` both need approval and are
   denied, so `setsid nohup ... &` cannot be used. Jobs run through the harness background runner instead
   (`uv run ...` with run_in_background, max 2 h), PID via `--pid-file`; the run stays alive and continues after
