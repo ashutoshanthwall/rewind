@@ -98,16 +98,15 @@ def frame_hashes(path: Path, n: int, thread_type: str) -> list[str]:
     return out
 
 
-def clip_benchmark(model_name: str, frames: list[np.ndarray], batch_sizes: list[int]) -> tuple[dict, list[dict]]:
-    device = torch.device("cuda")
-    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=None, device=device,
+def load_clip(model_name: str):
+    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=None, device="cuda",
                                                                  precision="fp16")
-    model.eval()
-    t0 = time.perf_counter()
-    batch = torch.stack([preprocess(Image.fromarray(f)) for f in frames])
-    prep_s = time.perf_counter() - t0
-    prep = {"images": len(frames), "seconds": prep_s, "per_s": len(frames) / prep_s,
-            "input": f"{frames[0].shape[1]}x{frames[0].shape[0]}", "transform": str(preprocess).replace("\n", " ")}
+    return model.eval(), preprocess
+
+
+def clip_benchmark(model, batch: torch.Tensor, batch_sizes: list[int]) -> list[dict]:
+    """Image-encoder throughput per batch size on preprocessed images (host->GPU copy included)."""
+    device = torch.device("cuda")
     rows = []
     with torch.inference_mode():
         for bs in batch_sizes:
@@ -125,7 +124,7 @@ def clip_benchmark(model_name: str, frames: list[np.ndarray], batch_sizes: list[
                          "peak_alloc_mib": torch.cuda.max_memory_allocated(device) / 2**20,
                          "device_used_mib": (total_b - free_b) / 2**20, "total_mib": total_b / 2**20,
                          "dim": emb.shape[1]})
-    return prep, rows
+    return rows
 
 
 def hms(seconds: float) -> str:
@@ -160,7 +159,7 @@ def main() -> None:
         raise RuntimeError(f"{probe.clip}: frame threading gives different frames than slice threading")
     threading = {t: decode(root / probe.path, probe.n_frames, t)[1] for t in ("SLICE", "AUTO")}
     thread_type = min(threading, key=threading.get)
-    print(f"threading on {probe.clip}: {threading} -> {thread_type} (first 300 frames identical: {same})")
+    print(f"threading on {probe.clip}: {threading} -> {thread_type} (first 300 frames identical: {same})", flush=True)
 
     modes = [("decode only", None, None), (f"keep {app_fps} fps, full resolution", app_fps, None),
              (f"keep {motion_fps} fps, {motion_w} px wide", motion_fps, motion_w)]
@@ -176,20 +175,32 @@ def main() -> None:
             results[(modality, label)] = {"video_s": video_s, "seconds": seconds, "kept": kept,
                                           "frames": sum(v.n_frames for v in clips), "clips": [v.clip for v in clips]}
             print(f"{modality} {label}: {video_s / 3600:.2f} h of video in {seconds:.1f} s "
-                  f"({video_s / seconds:.0f}x realtime, {results[(modality, label)]['frames'] / seconds:.0f} frames/s)")
+                  f"({video_s / seconds:.0f}x realtime, {results[(modality, label)]['frames'] / seconds:.0f} frames/s)", flush=True)
 
-    # CLIP: 1 fps frames from the RGB clips, until clip_frames.
-    frames = []
+    # CLIP: 1 fps frames from the RGB clips, preprocessed as they are kept (1,000 full frames would need 6 GB of RAM).
+    model, preprocess = load_clip(model_name)
+    tensors, prep_s, frame_size = [], [0.0], []
+
+    def keep(i, arr):
+        if len(tensors) < args.clip_frames:
+            t0 = time.perf_counter()
+            tensors.append(preprocess(Image.fromarray(arr)))
+            prep_s[0] += time.perf_counter() - t0
+            frame_size[:] = [f"{arr.shape[1]}x{arr.shape[0]}"]
+
     for v in pick_clips(videos, "rgb", args.clips, args.seed):
-        decode(root / v.path, v.n_frames, thread_type, keep_step(v.fps, app_fps), None,
-               on_keep=lambda i, a: frames.append(a) if len(frames) < args.clip_frames else None)
-        if len(frames) >= args.clip_frames:
+        decode(root / v.path, v.n_frames, thread_type, keep_step(v.fps, app_fps), None, on_keep=keep)
+        if len(tensors) >= args.clip_frames:
             break
-    prep, clip_rows = clip_benchmark(model_name, frames, args.batch_sizes)
+    if len(tensors) < args.clip_frames:
+        raise ValueError(f"only {len(tensors)} frames for the CLIP benchmark")
+    prep = {"images": len(tensors), "seconds": prep_s[0], "per_s": len(tensors) / prep_s[0], "input": frame_size[0],
+            "transform": str(preprocess).replace("\n", " ")}
+    clip_rows = clip_benchmark(model, torch.stack(tensors), args.batch_sizes)
     best = max(clip_rows, key=lambda r: r["per_s"])
     for r in clip_rows:
-        print(f"CLIP batch {r['batch']:>3}: {r['per_s']:.0f} img/s, peak {r['peak_alloc_mib']:.0f} MiB allocated")
-    print(f"preprocess (CPU, 1 process): {prep['per_s']:.0f} img/s")
+        print(f"CLIP batch {r['batch']:>3}: {r['per_s']:.0f} img/s, peak {r['peak_alloc_mib']:.0f} MiB allocated", flush=True)
+    print(f"preprocess (CPU, 1 process): {prep['per_s']:.0f} img/s", flush=True)
 
     # Projection to the whole selection.
     total = {m: sum(v.n_frames / v.fps for v in videos if v.modality == m) for m in ("rgb", "ir")}
@@ -222,7 +233,7 @@ def main() -> None:
               + ", ".join(results[("ir", "decode only")]["clips"]) + ".", "",
               "## CLIP image encoder (GPU)", "",
               f"`{model_name}`, open_clip `precision=\"fp16\"` (mixed precision), untrained weights (same compute as any "
-              f"tag), {len(frames)} real 1 fps frames, host→GPU copy included, after 2 warm-up batches.", "",
+              f"tag), {len(tensors)} real 1 fps frames, host→GPU copy included, after 2 warm-up batches.", "",
               "| batch | img/s | wall time | peak allocated (torch) | device memory in use |", "|---|---|---|---|---|"]
     for r in clip_rows:
         lines.append(f"| {r['batch']} | {r['per_s']:.0f} | {r['seconds']:.2f} s | {r['peak_alloc_mib']:.0f} MiB | "
@@ -249,7 +260,7 @@ def main() -> None:
     for label, s in proj.items():
         metrics[f"proj_decode_{label.split(',')[0].replace(' ', '_')}_h"] = s / 3600
     row = log_experiment("none", metrics, notes=f"step 1.4 throughput, seed {args.seed}, {args.clips} clips/modality, "
-                         f"{len(frames)} CLIP frames, untrained {model_name} fp16")
+                         f"{len(tensors)} CLIP frames, untrained {model_name} fp16")
     text += f"\nexperiments.csv row: {row['timestamp']}, git {row['git_hash']}, config {row['config_hash'][:12]}.\n"
     args.report.write_text(text)
     print(text)
