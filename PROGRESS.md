@@ -1381,6 +1381,21 @@ check (1.3). The `VERIFY` markers in `annotations.py`, `manifest.py` and `build_
 
 ---
 
+## Autopilot set up (Mon 26 Oct, 00:30) — Phases 4 → 8.1 run unattended
+
+- Ashutosh's instruction. Rules in `AUTOPILOT.md` (they win over CLAUDE.md for autopilot runs); runner
+  `scripts/autopilot.sh` starts one headless `claude -p` run per phase/long job and stops at `NEEDS_USER`, `FAILED`,
+  a claude error, or after Gate 8.1. Step 8.2 is never run by the autopilot.
+- Checked before launch: flags against `claude --help` (2.1.310); one real headless run with the runner's flags
+  (allowed: ls, nvidia-smi, date, git status, uv, pkill -F, Write; denied: git push, sudo, rm -rf, git reset --hard,
+  bare python3); the loop on a fake `claude` (WAITING_JOB → wait → DONE_PHASE → NEEDS_USER; stop after phase 8;
+  stop on missing status.json; stop on non-zero exit; kill of the runner ends the child).
+- Local `.git/hooks/pre-push` (not committed) refuses pushes while `REWIND_AUTOPILOT` is set.
+- Known stops ahead: 7.1 (`engine/` empty, 👤), Gate 6.2 if the paired rule says keep (no agreed precision/recall
+  bar), 7.4 (no agreed weight objective).
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every

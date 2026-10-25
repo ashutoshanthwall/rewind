@@ -34,3 +34,10 @@ results/logs/
 
 # Detector smoke-test sample frames (MEVA footage); redraw with scripts.detector_smoke
 results/figures/detector_smoke/
+
+# Autopilot run-time state (AUTOPILOT.md); log.md is the committed record
+results/autopilot/*
+!results/autopilot/log.md
+
+# Separate uv environments for models whose deps conflict with the project torch (AUTOPILOT.md §4)
+envs/
