@@ -59,6 +59,15 @@ def config_hash(config_path: Path) -> str:
     return hashlib.sha256(config_path.read_bytes()).hexdigest()
 
 
+def run_stamp(config_path: Path = DEFAULT_CONFIG, repo_dir: Path = REPO_ROOT) -> dict:
+    """Git hash and config hash at the START of a run.
+
+    Long jobs take this before they begin and pass it to log_experiment, so the row names the code and settings
+    that ran, not whatever is committed when the job ends (a commit during a run was logged as the run's code
+    twice, 25 Oct)."""
+    return {"git_hash": git_hash(Path(repo_dir)), "config_hash": config_hash(Path(config_path))}
+
+
 def log_experiment(
     split: str,
     metrics: dict,
@@ -67,8 +76,10 @@ def log_experiment(
     csv_path: Path = DEFAULT_CSV,
     config_path: Path = DEFAULT_CONFIG,
     repo_dir: Path = REPO_ROOT,
+    stamp: dict | None = None,
 ) -> dict:
-    """Append one experiment row and return it as a dict."""
+    """Append one experiment row and return it as a dict. `stamp` (from run_stamp at the start of a long run)
+    replaces the git and config hashes read now."""
     if split not in VALID_SPLITS:
         raise ValueError(f"split must be one of {VALID_SPLITS}, got {split!r}")
     if not isinstance(metrics, dict) or not metrics:
@@ -83,11 +94,15 @@ def log_experiment(
     if not isinstance(notes, str):
         raise TypeError(f"notes must be a string, got {notes!r}")
     metrics_json = json.dumps(metrics, sort_keys=True, allow_nan=False)
+    if stamp is None:
+        stamp = run_stamp(config_path, repo_dir)
+    elif set(stamp) != {"git_hash", "config_hash"}:
+        raise ValueError(f"stamp must come from run_stamp, got keys {sorted(stamp)}")
 
     row = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "git_hash": git_hash(Path(repo_dir)),
-        "config_hash": config_hash(Path(config_path)),
+        "git_hash": stamp["git_hash"],
+        "config_hash": stamp["config_hash"],
         "split": split,
         "metrics": metrics_json,
         "notes": notes,

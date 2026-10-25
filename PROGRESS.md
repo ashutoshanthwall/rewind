@@ -1344,6 +1344,43 @@ windows (AUC 0.55), so the motion baseline is likely not much better than sequen
 
 ---
 
+## Verification pass over Phases 0–3 (Sun 25 Oct, 23:55, asked by Ashutosh: "verify everything till now quickly and fix")
+
+Inline checks, all run now:
+
+| check | result |
+|---|---|
+| Test suite | 276 pass (275 + 1 new) |
+| Frozen queries: `eval/queries/HASHES` (7 files) | all OK; no commit touches `eval/queries/` after Gate 2.2 (979c37e) |
+| Raw evidence: SHA-256 of all 300 originals vs manifest | **300/300 match**; 0 writable files in `data/raw/` |
+| Proxies | 300 files present; frame count and duration (≤ 1 s) match the originals for all 300; frame alignment best at offset 0 for all 300 |
+| Splits | 58 / 42 / 200 clips (tuning / dev / test); 0 clips in two splits |
+| Test-split access | only via `check_split_access` (refuses unless `allow_test`); only `make_worksheets` (step 2.2, permitted) passes it |
+| Error handling | 3 `except` clauses outside vendored code: all re-raise or list the failure and exit 1 |
+| Secrets / large files | none tracked; `data/` and `artifacts/` untracked except `data/selection.txt` |
+| `uv.lock` | consistent with `pyproject.toml` |
+| PROGRESS numbers vs `experiments.csv` | 3.1 AUCs, 3.3 recalls/projections, 2.3 and 3.2 baseline medians all match |
+| 3.1 claim "decoding RGB at 1280 then resizing to 640 is a small difference" (was unmeasured) | **measured:** per-second activity, full pass vs direct-640 decode, on both 3.1 clips: Pearson r 0.9997 / 0.9990, rank agreement 0.998 / 1.000 |
+
+**Found and fixed: git hash read at the end of long jobs**
+- `log_experiment` read the git and config hashes when the row was written. A commit made while a long job ran was
+  therefore logged as that job's code.
+- This happened twice:
+  - the 3.3 Ultralytics rows (`e3ddc97-dirty`, already documented);
+  - the full-pass row (row 19, `3b9dcc0`), whose process loaded code from **`ad3f975`** at 18:49. The diff
+    `ad3f975..3b9dcc0` is only the `rewind/motion/store.py` path refactor (same paths, same outputs).
+- The row is left as written (the log is append-only); this note is its correction.
+- Fix: `run_stamp()` in `rewind/experiment_log.py` takes both hashes at the start. `index_pass`, `detector_smoke` and
+  `throughput` take the stamp at start and pass it to `log_experiment` (`stamp=`). The stamp also hashes the
+  `--config` file actually used; before, the logger always hashed the default config. New test: a commit and a
+  config edit during a run leave the stamped row unchanged.
+
+Not re-checked here (done at their steps, unchanged since): annotation parsing vs NIST spec, the 5-event manual
+check (1.3). The `VERIFY` markers in `annotations.py`, `manifest.py` and `build_events.py` remain open by design
+(undocumented dataset fields, ±1 s start times).
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every

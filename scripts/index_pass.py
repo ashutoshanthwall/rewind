@@ -35,7 +35,7 @@ import pandas as pd
 import yaml
 
 from rewind.detect.detectors import COCO_NAMES, make_detector
-from rewind.experiment_log import log_experiment
+from rewind.experiment_log import log_experiment, run_stamp
 from rewind.ingest.manifest import connect, load_videos, sha256_file
 from rewind.motion import store
 from rewind.motion.mog2 import MotionConfig, MotionScorer, per_second, to_size, warmed
@@ -161,6 +161,7 @@ def main() -> None:
     p.add_argument("--out-root", type=Path, default=REPO_ROOT / "artifacts")
     p.add_argument("--clips", nargs="+", help="only these clips (testing); implies no experiments.csv row")
     args = p.parse_args()
+    stamp = run_stamp(args.config)  # code + settings at the start: the row must name what ran, not what's there at the end
     cfg = yaml.safe_load(args.config.read_text())
     mcfg = MotionConfig.from_config(cfg["motion"])
     if cfg["detection"]["enabled"] is True and cfg["detection"]["fps"] != mcfg.fps:
@@ -210,7 +211,8 @@ def main() -> None:
     if todo and not args.clips and args.out_root == REPO_ROOT / "artifacts":
         log_experiment("none", {"clips": len(todo), "video_h": total_s / 3600, "wall_h": elapsed / 3600,
                                 "x_realtime": total_s / elapsed, **totals},
-                       f"phase 3 index_pass (MOG2 + detection {cfg['detection'].get('model')}), settings {settings}")
+                       f"phase 3 index_pass (MOG2 + detection {cfg['detection'].get('model')}), settings {settings}",
+                       stamp=stamp)
     print(f"outputs under {display_path(args.out_root)}")
 
 

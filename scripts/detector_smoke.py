@@ -45,7 +45,7 @@ import yaml
 
 from rewind.detect.detectors import COCO_NAMES, Detections, class_ids, make_detector
 from rewind.eval.splits import split_video_ids
-from rewind.experiment_log import log_experiment
+from rewind.experiment_log import log_experiment, run_stamp
 from rewind.ingest.manifest import connect, load_videos
 from rewind.motion.mog2 import MotionConfig, MotionScorer, to_size, warmed
 from rewind.paths import REPO_ROOT, display_path
@@ -175,6 +175,7 @@ def parse_spec(spec: str) -> dict:
 
 
 def run(args, cfg) -> None:
+    stamp = run_stamp(args.config)  # code + settings at the start (see run_stamp)
     dcfg, ccfg, mcfg = cfg["detection"], cfg["detection_check"], MotionConfig.from_config(cfg["motion"])
     if ccfg["match_iou"] not in ccfg["report_ious"]:
         raise ValueError("detection_check.match_iou must be one of report_ious")
@@ -322,7 +323,7 @@ def run(args, cfg) -> None:
             if proj:
                 metrics.update(detect_fps_rgb=proj["rgb"]["detect_fps"], projected_total_h=result["projected_total_h"])
             log_experiment("tuning", metrics, f"step 3.3 detector smoke {d['name']} ({d['backend']}, {d['weights']}, "
-                                              f"imgsz {d['imgsz']})")
+                                              f"imgsz {d['imgsz']})", stamp=stamp)
         print(f"wrote {display_path(out)} and {len(image_ids)} images in {display_path(d['fig_dir'])}")
 
 

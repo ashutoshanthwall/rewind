@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from rewind.experiment_log import COLUMNS, log_experiment
+from rewind.experiment_log import COLUMNS, log_experiment, run_stamp
 
 CONFIG_BYTES = b"search:\n  k_per_index: 200\n"
 # Computed outside this code with: printf 'search:\n  k_per_index: 200\n' | sha256sum
@@ -100,6 +100,21 @@ def test_logging_does_not_dirty_the_next_row(repo):
     log(repo, notes="second")
     row = log(repo, notes="third")
     assert row["git_hash"] == git(repo, "rev-parse", "HEAD")
+
+
+def test_stamp_taken_at_start_survives_edits_during_the_run(repo):
+    # A long job takes the stamp before it starts; a commit and a config edit while it runs must not change the row.
+    start_head = git(repo, "rev-parse", "HEAD")
+    stamp = run_stamp(repo / "config.yaml", repo)
+    (repo / "new_metric.py").write_text("x = 1\n")
+    git(repo, "add", "new_metric.py")
+    git(repo, "commit", "-q", "-m", "mid-run commit")
+    (repo / "config.yaml").write_bytes(CONFIG_BYTES + b"  ef_search: 400\n")
+    row = log(repo, stamp=stamp)
+    assert row["git_hash"] == start_head and row["config_hash"] == CONFIG_SHA256
+    assert log(repo)["git_hash"] == git(repo, "rev-parse", "HEAD") + "-dirty"   # without a stamp: read now
+    with pytest.raises(ValueError, match="stamp"):
+        log(repo, stamp={"git_hash": start_head})
 
 
 @pytest.mark.parametrize("split", ["train", "Test", ""])

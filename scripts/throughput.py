@@ -32,7 +32,7 @@ import torch
 import yaml
 from PIL import Image
 
-from rewind.experiment_log import DEFAULT_CSV, log_experiment
+from rewind.experiment_log import DEFAULT_CSV, log_experiment, run_stamp
 from rewind.ingest.manifest import connect, load_videos
 from rewind.video import keep_step
 
@@ -169,6 +169,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=14)
     args = parser.parse_args()
     load_start = os.getloadavg()
+    stamp = run_stamp(args.config)  # code + settings at the start (see run_stamp)
 
     cfg = yaml.safe_load(args.config.read_text())
     app_fps, motion_fps, motion_w = cfg["sampling"]["appearance_fps"], cfg["motion"]["fps"], cfg["motion"]["downscale_width"]
@@ -253,7 +254,7 @@ def main() -> None:
     for key, s in proj.items():
         metrics[f"proj_decode_{key}_h"] = s / 3600
     row = log_experiment("none", metrics, notes=f"{NOTES_PREFIX}, seed {args.seed}, {args.clips} clips/modality, "
-                         f"{len(tensors)} CLIP frames, untrained {model_name} fp16")
+                         f"{len(tensors)} CLIP frames, untrained {model_name} fp16", stamp=stamp)
     hist_keys = [f"decode_{m}_{key}_x_realtime" for m in ("rgb", "ir") for key, _, _, _ in modes] + ["clip_img_per_s"]
     runs = history(DEFAULT_CSV, hist_keys)
     slowest = {k: min(r[k] for r in runs if r[k] is not None) for k in hist_keys}
