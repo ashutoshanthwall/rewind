@@ -2,7 +2,7 @@
 
 Two crop sources, chosen independently and stored separately so step 4.4 can compare crop_source none / motion /
 detection_then_motion from one embedding run:
-  - detection crops: detections clipped to the frame, at least appearance.min_crop_px on their shorter side, ranked
+  - detection crops: detections clipped to the frame, at least appearance.min_crop_px on their longer side, ranked
     by appearance.crop_rank, at most appearance.max_crops_per_frame;
       score_area   = score x box area, descending ("largest / most confident first", CLAUDE.md step 4.2);
       moving_first = detections whose box is at least appearance.crop_moving_share covered by motion boxes first,
@@ -68,7 +68,10 @@ def clip_boxes(boxes: np.ndarray, w: int, h: int) -> np.ndarray:
 
 
 def big_enough(boxes: np.ndarray, min_px: int) -> np.ndarray:
-    return np.minimum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]) >= min_px
+    """Longer side >= min_px: the embedded square is built from the longer side, so that is the crop's content size.
+    (A shorter-side test dropped most people: standing people are ~2.5x taller than wide; the first ranking check
+    found only 8 % of annotated people covered even by all detections.)"""
+    return np.maximum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]) >= min_px
 
 
 def mask_size(frame_size: tuple[int, int], width: int) -> tuple[int, int]:

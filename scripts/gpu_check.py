@@ -14,37 +14,14 @@ from pathlib import Path
 import open_clip
 import torch
 import yaml
-from open_clip.pretrained import get_pretrained_cfg
 from PIL import Image
+
+from rewind.embed.clip_model import check_pretrained_compatible  # noqa: F401 (also imported from here by tests)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Test fixtures, not tunables: (name, RGB) of the solid-colour images and their prompts.
 COLOURS = [("red", (255, 0, 0)), ("green", (0, 255, 0)), ("blue", (0, 0, 255))]
-
-
-def check_pretrained_compatible(model_name: str, pretrained: str) -> None:
-    """Raise unless open_clip knows this (model, tag) pair and their activations agree.
-
-    open_clip itself only warns when weights trained with QuickGELU are loaded into a GELU model
-    (or vice versa), then runs them with the wrong activation. E.g. tag 'openai' needs model
-    'ViT-B-16-quickgelu', not 'ViT-B-16'. Uses only bundled metadata: no download, no GPU.
-    """
-    model_cfg = open_clip.get_model_config(model_name)
-    if model_cfg is None:
-        raise ValueError(f"Unknown open_clip model {model_name!r}")
-    tag_cfg = get_pretrained_cfg(model_name, pretrained)
-    if not tag_cfg:
-        raise ValueError(f"open_clip has no pretrained tag {pretrained!r} for {model_name!r}; "
-                         f"available: {open_clip.list_pretrained_tags_by_model(model_name)}")
-    # Missing key means False: the same default open_clip 3.3.0 uses (factory.py, create_model).
-    model_quick_gelu = model_cfg.get("quick_gelu", False)
-    tag_quick_gelu = tag_cfg.get("quick_gelu", False)
-    if model_quick_gelu != tag_quick_gelu:
-        raise ValueError(
-            f"QuickGELU mismatch: model {model_name!r} has quick_gelu={model_quick_gelu} but tag "
-            f"{pretrained!r} was trained with quick_gelu={tag_quick_gelu}. Pick a matching model/tag pair."
-        )
 
 
 def main() -> int:

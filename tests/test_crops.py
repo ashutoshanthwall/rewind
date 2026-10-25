@@ -19,16 +19,19 @@ def test_covered_share_hand_computed():
 
 
 def test_score_area_ranks_by_score_times_area_and_skips_small_boxes():
-    cls = np.array(["car", "car", "person", "car"])
+    cls = np.array(["car", "car", "person", "car", "person"])
     boxes = np.array([[0, 0, 40, 40],        # area 1600 x 0.5 = 800
                       [50, 50, 70, 70],      # 400 x 0.9 = 360
                       [80, 0, 95, 30],       # 450 x 0.9 = 405
-                      [0, 90, 5, 100]])      # shorter side 5 < 10: skipped
-    scores = np.array([0.5, 0.9, 0.9, 0.99])
+                      [0, 92, 5, 100],       # longer side 8 < 10: skipped
+                      [60, 0, 66, 30]])      # 6 x 30: thin but longer side 30 >= 10, kept; 180 x 0.99 = 178
+    scores = np.array([0.5, 0.9, 0.9, 0.99, 0.99])
     crops = select_crops(cls, boxes, scores, np.zeros((0, 4)), SIZE, CFG)
     det = [c for c in crops if c.source == "detection"]
     assert [(c.cls, c.box) for c in det] == [("car", (0, 0, 40, 40)), ("person", (80, 0, 95, 30))]
     assert [c.rank for c in det] == [0, 1]
+    all_det = select_crops(cls, boxes, scores, np.zeros((0, 4)), SIZE, CropConfig(**{**CFG.__dict__, "max_crops": 9}))
+    assert [c.box for c in all_det] == [(0, 0, 40, 40), (80, 0, 95, 30), (50, 50, 70, 70), (60, 0, 66, 30)]
 
 
 def test_moving_first_puts_detections_under_motion_first():
