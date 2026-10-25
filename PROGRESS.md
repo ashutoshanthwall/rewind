@@ -1211,7 +1211,7 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 ---
 
-## Step 3.2 — Motion-ranked baseline: PREP DONE, final run waits for the full pass (Sun 25 Oct, ~19:40)
+## Step 3.2 — Motion-ranked baseline: PREP DONE, final run waits for the full pass (Sun 25 Oct, 19:25)
 
 **Done (code + tests, committed)**
 - `rewind/eval/baselines.py`:
