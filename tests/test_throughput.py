@@ -25,6 +25,9 @@ def test_decode_keeps_every_kth_frame_from_zero(tmp_path, thread_type):
     assert kept == 4 and seconds > 0
     assert seen == [(0, (24, 32, 3)), (6, (24, 32, 3)), (12, (24, 32, 3)), (18, (24, 32, 3))]  # 64x48 -> 32x24
     assert decode(path, 20, thread_type)[0] == 0  # decode only: nothing kept
+    shapes = []
+    decode(path, 20, thread_type, step=10, width=128, on_keep=lambda i, a: shapes.append(a.shape))
+    assert shapes == [(48, 64, 3)] * 2  # never scaled up
 
 
 def test_decode_refuses_wrong_frame_count(tmp_path):

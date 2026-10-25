@@ -67,11 +67,14 @@ def keep_step(fps: float, rate: float) -> int:
 def decode(path: Path, n_frames: int, thread_type: str, step: int | None = None, width: int | None = None,
            on_keep=None) -> tuple[int, float]:
     """Decode every frame sequentially; every `step`-th frame (from frame 0) is converted to an RGB array (scaled
-    to `width`, aspect kept, if given) and passed to on_keep(index, array). Returns (frames kept, seconds)."""
+    down to `width`, aspect kept, if given; never scaled up) and passed to on_keep(index, array).
+    Returns (frames kept, seconds)."""
     kept, t0 = 0, time.perf_counter()
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         stream.thread_type = thread_type
+        if width is not None and width >= stream.codec_context.width:
+            width = None  # e.g. IR 352 px wide: keep native size
         height = None if width is None else 2 * round(stream.codec_context.height * width / stream.codec_context.width / 2)
         n = 0
         for n, frame in enumerate(container.decode(stream), start=1):
@@ -162,7 +165,7 @@ def main() -> None:
     print(f"threading on {probe.clip}: {threading} -> {thread_type} (first 300 frames identical: {same})", flush=True)
 
     modes = [("decode only", None, None), (f"keep {app_fps} fps, full resolution", app_fps, None),
-             (f"keep {motion_fps} fps, {motion_w} px wide", motion_fps, motion_w)]
+             (f"keep {motion_fps} fps, at most {motion_w} px wide", motion_fps, motion_w)]
     results = {}
     for modality in ("rgb", "ir"):
         clips = pick_clips(videos, modality, args.clips, args.seed)
@@ -238,7 +241,9 @@ def main() -> None:
     for r in clip_rows:
         lines.append(f"| {r['batch']} | {r['per_s']:.0f} | {r['seconds']:.2f} s | {r['peak_alloc_mib']:.0f} MiB | "
                      f"{r['device_used_mib']:.0f} / {r['total_mib']:.0f} MiB |")
-    lines += ["", f"Fastest: batch **{best['batch']}**, {best['per_s']:.0f} img/s. Embedding dim {best['dim']}.", "",
+    plateau = [r["batch"] for r in clip_rows if r["per_s"] >= 0.98 * best["per_s"]]
+    lines += ["", f"Fastest: batch **{best['batch']}**, {best['per_s']:.0f} img/s. Within 2 % of it: batch "
+              f"{', '.join(map(str, plateau))}. Embedding dim {best['dim']}.", "",
               f"Preprocessing ({prep['transform']}) on the CPU in one process: **{prep['per_s']:.0f} img/s** "
               f"for {prep['input']} frames.", "",
               "## Projected times for the whole selection", "",
@@ -247,7 +252,17 @@ def main() -> None:
         lines.append(f"| decode, {label} | {hms(proj[label])} |")
     lines += [f"| CLIP encoder, full frames only ({n_1fps:,} frames at {app_fps} fps, before dedup) | {hms(clip_frames_s)} |",
               f"| CLIP encoder, full frame + {max_crops} crops (upper bound, {n_1fps * (1 + max_crops):,} images) | {hms(clip_crops_s)} |",
-              f"| CLIP preprocessing, full frames, 1 CPU process | {hms(prep_frames_s)} |", ""]
+              f"| CLIP preprocessing, full frames, 1 CPU process | {hms(prep_frames_s)} |", "",
+              "## Caveats", "",
+              "- One run each, no repeats; wall times on an otherwise idle machine (load average checked before the run). "
+              "The first decode mode reads the clips from disk, later modes mostly from the page cache "
+              "(2-3 GB per hour of RGB); decoding, not reading, dominates.",
+              "- Decoding uses all cores (frame threading); other jobs running alongside will slow it.",
+              "- CLIP weights untrained: the weight tag (appearance.pretrained, TBD) does not change the compute.",
+              "- Preprocessing is the model's default: shortest side to 224, then a **centre crop to 224x224**, which "
+              "cuts the left and right ~22 % of a 16:9 frame. Whether full frames should be padded or tiled instead is "
+              "a step 4.2 decision. Preprocessing ran in one process; it parallelises over CPU workers.",
+              "- Not measured here: the detector (Gate 3.3), MOG2 itself, crop extraction, the action branch.", ""]
     text = "\n".join(lines)
 
     metrics = {"decode_thread_auto": float(thread_type == "AUTO"),
