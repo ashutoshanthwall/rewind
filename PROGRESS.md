@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup (complete); next: 1 — Ingest**
+Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1 done); next: 1.2 — Playback proxies**
 
 ---
 
@@ -224,3 +224,68 @@ Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup (complete); next: 1 �
 - `ls data/raw | wc -l` → 300; `stat -c '%A' data/raw` → `dr-xr-xr-x`; try `touch data/raw/x` → it must fail.
 - Play 1 RGB and 1 IR file from `data/raw/` (e.g. with `ffplay`) to confirm they decode.
 - `tail -3 data/download.log` should end with `verified size + ETag of all 300 files`.
+
+---
+
+## Step 1.1 — Manifest (Sun 25 Oct)
+
+**Done**
+- `rewind/ingest/manifest.py` (reused by later steps):
+  - parses filenames (`date.HH-MM-SS.HH-MM-SS.site.Gnnn.r13.avi`; impossible dates/times raise; end after midnight → next day);
+  - frame ↔ seconds ↔ wall-clock conversion (`Video.frame_time`, `Video.frame_at`, bounded to existing frames);
+  - container probe that also reads every packet and requires exactly `n_frames` packets with decode timestamps 0..n−1;
+  - SHA-256 and the SQLite schema (`videos`, STRICT, `modality` restricted to `rgb`/`ir`).
+- `scripts/build_manifest.py`:
+  - checks every name before hashing or writing anything: the camera must be in the MEVA clip table, each camera has one site, every RGB clip has a Kitware annotation file;
+  - per file: probe, name vs container duration check, hash, insert; resumable, one commit per file;
+  - `--verify` re-hashes and re-probes everything and changes nothing;
+  - writes `results/reports/manifest_1.1.md`.
+  - Run from the repo root as `uv run python -m scripts.build_manifest`. That makes `rewind` importable with no build backend, which closes the 0.2/0.4 open issue without a new dependency.
+- `tests/test_manifest.py`: 54 tests.
+  - Filename parsing and timestamp conversion, with hand-computed values: midnight, out of range, and a round-trip of all 9,000 frames.
+  - Probe on generated AVIs; SHA-256 FIPS test vector.
+  - `build`/`verify` end to end on toy files: resume, changed size refused, duration mismatch refused with nothing written, one flipped byte detected, missing row detected.
+  - Clip-table modality, annotation index, pre-validation.
+- PROMPT R found 6 problems and fixed them:
+  1. Frame timestamps unusable (see Decisions).
+  2. `n_frames` assumed from the header, not checked.
+  3. Annotation and site checks ran after inserting rows.
+  4. A clip in both Kitware sources was silently overwritten.
+  5. `build`/`verify` were untested and hard-wired to repo paths.
+  6. DST was not mentioned, and a stale VERIFY was left in `docs/meva_notes.md`.
+- Ashutosh checked by eye: camera views are the same on 03-07, 03-11 and 03-15 for all 6 cameras (`compare_<camera>.jpg`, one frame per date side by side). G474 thermal contrast changes a lot between dates; look at this again at 4.3.
+
+**Key numbers**
+- **300 videos, 25.01 h (RGB 20.76 h, IR 4.25 h), 39.86 GB.** The selection said 24.99 h because it used filename durations.
+- All files: H.264, constant 30/1 fps, one stream. RGB 1920x1080, G474 352x240. Frames per clip: 8,831–9,013.
+- Per camera: G330 51 clips / 4.25 h, G336 51 / 4.25, G340 49 / 4.09, G424 50 / 4.17, G436 48 / 4.00, G474 51 / 4.25. Each camera has 9–10 sessions.
+- Annotation files: RGB evaluation-level 120 and training-level 129. G474 has third-party labels on 29 clips, plus 3 Kitware `empty_37` files.
+- First build: about 1 min, plus a resume after the tolerance stop. `--verify` (re-hash + re-probe of 39.9 GB): 45 s, **ALL MATCH**. Two hashes cross-checked with `sha256sum`. A corrupted hash in a scratch DB copy was reported and gave exit 1.
+- Tests: **123/123 pass**.
+
+**Decisions**
+- **Frame index = count of decoded frames from 0; time = index / fps.** These files are H.264 with B-frames in AVI, which stores no presentation timestamps. ffmpeg invents packet pts in decode order (pts = dts + 1), so decoded `frame.pts` / `frame.time` are scrambled (e.g. 1, 3, 2, 6), and ffprobe shows `pts=N/A`. Never use `frame.pts`. Don't seek by timestamp without checking where you land. This applies to every step that decodes video.
+- **Wall-clock of frame 0 = filename start time.** Filename times are cut to whole seconds at both ends (15 names say 299 s for 300.0–300.33 s of video), so times are accurate to about ±1 s. Duration comes from the container, never from the name.
+- **New config key `ingest.max_name_duration_diff_s: 2.0`.**
+  - The first value, 1.0, was mine, set from a misread printout. It stopped the build at a real +1.33 s clip.
+  - The observed range over all files is −0.77 to +1.33 s. The errors this check exists for (wrong fps, truncated file) are tens of seconds.
+  - The same key is the session gap tolerance in the report.
+- **Modality per camera** from the clip table (camera set `IR`), because 7 selected clips (session edges) are missing from the table.
+- **Not an experiment:** no row in `experiments.csv`.
+
+**Open issues**
+- **Step 1.2 must compare proxy frame counts with the originals**, not just durations within 1 s. With invented timestamps, ffmpeg could drop, duplicate or reorder frames, and playback would drift from the indexed times.
+- **Steps 1.4 / 3.1 / 4.x:** decode sequentially and count frames (see Decisions). Seeking needs its own check.
+- VERIFY: the sub-second part of the start time is unknown (±1 s).
+- VERIFY: times are naive local times, and 2018-03-11 is the US DST switch date. No selected clip spans 02:00–03:00. Never subtract times across dates.
+- VERIFY: the clip table's cross-camera offsets all equal the filename start-time differences × 30 (no extra sync information), with the opposite sign to the clip-table README. Irrelevant while we never link cameras.
+- `tsr0`: strong evidence for 0-based frames with an inclusive end. No activity ends at or past `n_frames`; in 134 of 221 annotated RGB clips the last activity ends exactly on `n_frames − 1`. Confirm at 1.3, together with the CMU/UMD conventions.
+- Carried over: training-level label completeness; `drop-4-hadcv22` not surveyed; `appearance.pretrained` still TBD.
+- Resolved here: the `import rewind` problem; 30 fps checked per file; camera views fixed across dates.
+
+**Verify by hand**
+- Pick 2 clips, run the query below, then play the G330 file. The camera, start time and duration must match the filename, and G330 must be the gym:
+  `uv run python -c "import sqlite3; c=sqlite3.connect('data/rewind.sqlite'); [print(*r, sep=' | ') for r in c.execute(\"select clip, camera_id, modality, start_time, duration_s, n_frames from videos where clip in ('2018-03-11.13-50-00.13-54-59.school.G330', '2018-03-15.15-55-00.16-00-00.school.G474')\")]"`
+  `ffplay data/raw/2018-03-11.13-50-00.13-54-59.school.G330.r13.avi`
+- Read `rewind/ingest/manifest.py`, especially the frame index rule and `FRAME_SNAP_DECIMALS`. Be able to explain why `frame.pts` can't be trusted here and why the snap is needed (datetime stores 1/30 s as 33,333 µs).
+- Open `results/reports/manifest_1.1.md` and check the totals above.

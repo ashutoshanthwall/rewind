@@ -46,8 +46,20 @@ Other vehicle: `vehicle_turns_left`, `vehicle_turns_right`, `vehicle_reverses`, 
   **G474 checked thermal by eye** (2018-03-11 16:15 clip): tyres glow white (black in visible light), people
   uniformly bright incl. heads; the MEVA abstract (arXiv 2012.00914) says "38 RGB and thermal IR cameras".
   The other IR cameras were not checked frame by frame.
-- RGB probe (G436): H.264 1920x1080, 30 fps, ~4.5 Mbit/s. A 5-min clip has 9000 frames, matching `tsr0: [0, 9000]`
-  → **30 fps** (VERIFY per file from the container at 1.1).
+- RGB probe (G436): H.264 1920x1080, 30 fps, ~4.5 Mbit/s.
+- **Checked on all 300 selected files at 1.1:** H.264 in AVI, constant 30/1 fps, one video stream; packet count =
+  header frame count (8,831-9,013 per clip) with decode timestamps 0..n-1. Activity `tsr0` end frames never reach
+  `n_frames`, and in 134 of 221 annotated RGB clips the last activity ends exactly on frame `n_frames - 1`:
+  strong evidence that `tsr0` is 0-based with an inclusive end (confirm at 1.3). `[0, 9000]` appears only on
+  `empty_37` markers.
+- **Frame index rule:** the files have B-frames and AVI stores no presentation timestamps, so decoded
+  `frame.pts` / `frame.time` are scrambled (ffprobe: `pts=N/A`). Frame index = count of decoded frames from 0;
+  time = index / 30. Never use `frame.pts`; don't seek by timestamp without checking where you land.
+- Filename times are whole seconds at both ends (15 selected names say 299 s for 300.0-300.33 s of video), so
+  wall-clock is accurate to about +/- 1 s. The clip table's cross-camera frame offsets all equal
+  (ref start - clip start) x 30 from the filename times, i.e. they carry no extra sync information, and the sign
+  is the opposite of the clip-table README's equation (VERIFY which is right; we never link cameras).
+  7 selected clips (session edges) are missing from the clip table.
 - Cameras record in **sessions**: no camera has more than 3.65 h of video on any date. A continuous 4-5 h window
   does not exist. Each RGB camera has ~7.5-8 annotated hours spread over 7 dates.
 - `metadata/meva-camera-daily-status.txt`: no camera changes indoor/outdoor across days. Fixed view across days: VERIFY by eye.

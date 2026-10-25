@@ -2,6 +2,12 @@
 # Initial values from CLAUDE.md section 1.9. Tune only on tuning/dev splits.
 # "TBD" values are placeholders: code must refuse to run on them, never default them.
 
+ingest:
+  # step 1.1: max |container duration - filename duration|; also the max gap/overlap between clips of one
+  # camera that still counts as one continuous session. Filename times are cut to whole seconds at both ends
+  # (15 names say 299 s for 300.0-300.33 s of video). Observed on the 300 files: -0.77 .. +1.33 s.
+  # Errors worth catching (truncated file, wrong fps, wrong file) are tens of seconds.
+  max_name_duration_diff_s: 2.0
 sampling:
   appearance_fps: 1
   max_gap_s: 10
