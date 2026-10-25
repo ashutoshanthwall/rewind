@@ -32,6 +32,7 @@ def sampled_frames(path: Path, n_frames: int, step: int, max_width: int,
     Frames are scaled down to max_width (aspect kept; never up). Raises at the end if the decoded frame count
     differs from the manifest's n_frames. AUTO (frame) threading: step 1.4 found it 2x faster than slice threading
     with identical frames."""
+    path = Path(path)
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
         stream.thread_type = thread_type

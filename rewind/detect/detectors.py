@@ -2,9 +2,9 @@
 
 Two backends, imported lazily so this module loads in an environment that has only one of them:
   - "ultralytics": Ultralytics YOLOv8 (AGPL-3.0). Letterbox, fp16 and NMS are done by the library.
-  - "yolox": Megvii YOLOX (Apache-2.0). Preprocessing as YOLOX's own ValTransform(legacy=False): resize keeping the
-    aspect ratio so the image fits imgsz x imgsz, pad bottom/right with 114, BGR, no normalisation. VERIFY (checked
-    at 3.3 by comparing both settings on real frames): the 0.1.1rc0 release weights expect this non-legacy input.
+  - "yolox": Megvii YOLOX (Apache-2.0), model code vendored in rewind/detect/yolox_vendor (no package). Preprocessing as YOLOX's own ValTransform(legacy=False): resize keeping the
+    aspect ratio so the image fits imgsz x imgsz, pad bottom/right with 114, BGR, no normalisation. Checked at 3.3 on
+    real frames: the 0.1.1rc0 release weights expect this non-legacy input (legacy input: recall 0).
 Both return boxes in the pixels of the frame they were given (x1, y1, x2, y2), filtered to `classes`, with score
 >= conf_thresh and per-class NMS at nms_iou.
 """
@@ -60,15 +60,14 @@ class YoloxDetector:
     def __init__(self, exp_name: str, weights: str, imgsz: int, conf_thresh: float, nms_iou: float,
                  classes: list[str], legacy: bool = False):
         import torch
-        from yolox.exp import get_exp
-        from yolox.utils import postprocess
+        from rewind.detect.yolox_vendor import NUM_CLASSES, build_yolox
+        from rewind.detect.yolox_vendor.boxes import postprocess
         self.torch, self.postprocess = torch, postprocess
-        exp = get_exp(None, exp_name)
-        self.model = exp.get_model()
-        ckpt = torch.load(weights, map_location="cpu", weights_only=False)   # official release .pth (VERIFY source)
+        self.model = build_yolox(exp_name)
+        ckpt = torch.load(weights, map_location="cpu", weights_only=False)   # official release .pth (hash in config)
         self.model.load_state_dict(ckpt["model"])
         self.model.eval().cuda().half()
-        self.num_classes, self.imgsz, self.legacy = exp.num_classes, imgsz, legacy
+        self.num_classes, self.imgsz, self.legacy = NUM_CLASSES, imgsz, legacy
         self.conf, self.nms = conf_thresh, nms_iou
         self.keep = np.array(class_ids(classes))
 

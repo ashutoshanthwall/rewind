@@ -3,7 +3,8 @@
 Every clip of the manifest (all splits: indexing reads footage, never labels) is decoded once
 (rewind/video.sampled_frames) at max(motion.downscale_width, detection.imgsz). Each sample goes to
   - MOG2 (rewind/motion/mog2.py) at motion.downscale_width -> per-second activity + motion boxes;
-  - the detector of config `detection` (rewind/detect/detectors.py), if detection.enabled.
+  - the detector of config `detection` (rewind/detect/detectors.py), if detection.enabled, at the input size of the
+    clip's modality (detection.imgsz.rgb / .ir).
 A decode thread runs ahead of MOG2 + detection (queue of 2 batches), so CPU decoding overlaps GPU detection.
 
 Outputs per clip (boxes in ORIGINAL video pixels; t_s = frame / fps = seconds in the clip = proxy time):
@@ -70,19 +71,23 @@ def prefetch(iterable, maxsize: int):
         yield item
 
 
-def load_detector(dcfg: dict):
+def load_detectors(dcfg: dict, modalities: set[str]) -> dict:
+    """{modality: detector} at detection.imgsz[modality]; {} if detection is disabled. Checks the weights hash."""
     if dcfg["enabled"] is not True:
         if dcfg["enabled"] is False:
-            return None
+            return {}
         raise ValueError(f"config detection.enabled must be true or false, got {dcfg['enabled']!r}")
     for key in ("backend", "model", "weights", "weights_sha256", "imgsz", "conf_thresh", "nms_iou", "classes"):
         if dcfg.get(key) in (None, "TBD"):
             raise ValueError(f"config detection.{key} is missing or TBD")
+    missing = modalities - set(dcfg["imgsz"])
+    if missing:
+        raise ValueError(f"config detection.imgsz has no input size for {sorted(missing)}")
     weights = REPO_ROOT / dcfg["weights"]
     if sha256_file(weights) != dcfg["weights_sha256"]:
         raise ValueError(f"{weights} does not match detection.weights_sha256 (wrong or changed weights file)")
-    return make_detector(dcfg["backend"], str(weights), dcfg["imgsz"], dcfg["conf_thresh"], dcfg["nms_iou"],
-                         dcfg["classes"], dcfg.get("yolox_exp"))
+    return {m: make_detector(dcfg["backend"], str(weights), dcfg["imgsz"][m], dcfg["conf_thresh"], dcfg["nms_iou"],
+                             dcfg["classes"], dcfg["model"]) for m in sorted(modalities)}
 
 
 def process_clip(v, size: tuple[int, int], cfg: dict, mcfg: MotionConfig, detector, out_root: Path) -> dict:
@@ -90,7 +95,7 @@ def process_clip(v, size: tuple[int, int], cfg: dict, mcfg: MotionConfig, detect
     dcfg = cfg["detection"]
     w, h = size
     step = keep_step(v.fps, mcfg.fps)
-    det_width = dcfg["imgsz"] if detector else 0
+    det_width = dcfg["imgsz"][v.modality] if detector else 0
     decode_width = max(mcfg.downscale_width, det_width)
     motion_size = scaled_size(w, h, mcfg.downscale_width)
     det_size = scaled_size(w, h, det_width) if detector else None
@@ -185,11 +190,11 @@ def main() -> None:
     print(f"index_pass: {len(videos) - len(todo)} clips done, {len(todo)} to do ({total_s / 3600:.2f} h of video); "
           f"settings {settings}; detection {'on: ' + cfg['detection']['model'] if cfg['detection']['enabled'] is True else 'off'}",
           flush=True)
-    detector = load_detector(cfg["detection"]) if todo else None
+    detectors = load_detectors(cfg["detection"], {v.modality for v in todo}) if todo else {}
 
     t_start, video_done, totals = time.perf_counter(), 0.0, {"samples": 0, "detections": 0, "motion_boxes": 0}
     for n, v in enumerate(todo, 1):
-        m = process_clip(v, size_of[v.video_id], cfg, mcfg, detector, args.out_root)
+        m = process_clip(v, size_of[v.video_id], cfg, mcfg, detectors.get(v.modality), args.out_root)
         video_done += m["video_s"]
         totals["samples"] += m["n_samples"]
         totals["motion_boxes"] += m["n_motion_boxes"]

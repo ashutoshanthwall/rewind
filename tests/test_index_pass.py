@@ -10,7 +10,7 @@ import pytest
 from rewind.detect.detectors import Detections
 from rewind.ingest.manifest import Video
 from rewind.motion.mog2 import MotionConfig
-from scripts.index_pass import load_detector, prefetch, process_clip, settings_hash
+from scripts.index_pass import load_detectors, prefetch, process_clip, settings_hash
 from tests.test_manifest import write_avi
 
 MOTION = {"fps": 5, "downscale_width": 32, "history_frames": 500, "var_threshold": 16, "detect_shadows": True,
@@ -38,17 +38,19 @@ def test_settings_hash_tracks_motion_and_detection_only():
 
 
 def test_load_detector_refuses_tbd_and_wrong_hash(tmp_path):
-    assert load_detector({"enabled": False}) is None
+    assert load_detectors({"enabled": False}, {"rgb"}) == {}
     with pytest.raises(ValueError, match="enabled must be true or false"):
-        load_detector({"enabled": "TBD"})
-    base = {"enabled": True, "backend": "yolox", "model": "m", "weights": "x", "weights_sha256": "TBD", "imgsz": 640,
-            "conf_thresh": 0.3, "nms_iou": 0.65, "classes": ["person"]}
+        load_detectors({"enabled": "TBD"}, {"rgb"})
+    base = {"enabled": True, "backend": "yolox", "model": "m", "weights": "x", "weights_sha256": "TBD",
+            "imgsz": {"rgb": 1280}, "conf_thresh": 0.3, "nms_iou": 0.65, "classes": ["person"]}
     with pytest.raises(ValueError, match="weights_sha256 is missing or TBD"):
-        load_detector(base)
+        load_detectors(base, {"rgb"})
     w = tmp_path / "w.pth"
     w.write_bytes(b"abc")
+    with pytest.raises(ValueError, match="no input size for \\['ir'\\]"):
+        load_detectors({**base, "weights": str(w), "weights_sha256": "0" * 64}, {"rgb", "ir"})
     with pytest.raises(ValueError, match="does not match detection.weights_sha256"):
-        load_detector({**base, "weights": str(w), "weights_sha256": "0" * 64})
+        load_detectors({**base, "weights": str(w), "weights_sha256": "0" * 64}, {"rgb"})
 
 
 class FakeDetector:
@@ -67,7 +69,7 @@ def test_process_clip_end_to_end(tmp_path):
     path = tmp_path / "v.avi"
     write_avi(path, n_frames=45, size=(64, 48))
     v = Video(1, "clip", str(path), "G1", "rgb", datetime(2018, 3, 7, 16, 50), 45, 30.0)
-    cfg = {"motion": MOTION, "detection": {"enabled": True, "imgsz": 16, "batch_size": 3}}
+    cfg = {"motion": MOTION, "detection": {"enabled": True, "imgsz": {"rgb": 16}, "batch_size": 3}}
     det = FakeDetector()
     marker = process_clip(v, (64, 48), cfg, MotionConfig.from_config(MOTION), det, tmp_path / "art")
     assert marker["n_samples"] == 8 and marker["n_detections"] == 8 and marker["decode_width"] == 32

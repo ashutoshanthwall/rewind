@@ -106,11 +106,17 @@ motion:
   merge_dilate_px: 9           # dilation merges nearby blobs of one object into one box (at 640 px wide)
   min_box_area_px: 100         # in analysis-frame pixels (~10x10 at 640 px wide); not tuned (3.1 smoke value)
 detection:
-  enabled: TBD                      # Gate 3.3
-  model: TBD                        # yolov8n/s or yolox_s/m
-  license: TBD                      # recorded for README
+  # Gate 3.3 (25 Oct, Ashutosh): YOLOX-s; RGB at 1280 px, IR at 640 px (results/reports/detector_3.3.md)
+  enabled: true
+  backend: yolox                    # rewind/detect/detectors.py; model code vendored in rewind/detect/yolox_vendor
+  model: yolox-s
+  weights: artifacts/weights/yolox_s.pth
+  weights_url: https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.pth
+  weights_sha256: f55ded7181e1b0c13285c56e7790b8f0e8f8db590fe4edb37f0b7f345c913a30
+  license: Apache-2.0               # code (vendored, rewind/detect/yolox_vendor/LICENSE) and release weights
   fps: 5
-  imgsz: 640
+  imgsz: {rgb: 1280, ir: 640}       # input size per modality: 1280 doubles RGB person recall (0.17 -> 0.41);
+                                    # 352x240 thermal frames upscaled to 1280 lose detections (640 kept for IR)
   conf_thresh: 0.3
   nms_iou: 0.65                     # per-class NMS IoU, both backends (YOLOX eval default 0.65; Ultralytics 0.7)
   batch_size: 16                    # frames per detector call
