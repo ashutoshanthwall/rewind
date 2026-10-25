@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done (2.3 metrics + baselines); next: Phase 3 — 3.1 MOG2 motion pass**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); next: Phase 3 — 3.1 MOG2 motion pass**
 
 ---
 
@@ -812,3 +812,163 @@ report reproduces byte-identically; test split refused by both loaders; 83 GB fr
   Ashutosh — an independent hand check is still open if wanted:
   `sed -n '/def test_witness_window_first_then_the_rest/,/^def /p' tests/test_metrics.py`
 - `less results/reports/baselines_2.3.md` (dev summary as above).
+
+---
+
+## Open-issue pass after Phase 2 (Sun 25 Oct) — 8 items
+
+Not a plan step: Ashutosh asked to work through the open issues/VERIFY items one by one before Phase 3. Checks ran
+as throwaway scripts in the session scratchpad (not committed); numbers below come from those runs. No code,
+config or data changed (PROGRESS.md only).
+
+**1. Independent hand check of the headline metric — done by Ashutosh.** New toy case (2 cameras × 300 s, 60 s
+segments, GT on B 130-140 s): sequential 430 s, witness (t = 100 s, ±60 s) 310 s, miss case 690 s, short list 35 s.
+All four hand answers equal `seconds_watched` output. Closes the 2.3 "verify by hand" item.
+
+**2. Camera views across the 3 dates — VERIFY closed. Decision (Ashutosh): accept and document.**
+- Method: proxy frame at 60 s of every clip (300); SIFT + RANSAC homography vs the previous clip of the same camera
+  (and vs the camera's first clip); flagged pairs checked by eye.
+- G330, G424, G436: fixed (median 0.1-0.2 px at 640 wide between consecutive clips; max 6.5 px).
+- G474 (IR): fixed by eye (poles/path in place); SIFT finds too few matches across dates (thermal contrast changes).
+- **G340: one view change on 03-07 between 11:10 and 16:50** (slight tilt, ~26 px at 640 wide ≈ 4 %); stable from
+  16:50 through 03-11 and 03-15. The 4 morning clips are all in **test**.
+- **G336: small temporary change on 03-07 17:00-17:10** (2 clips, 22-48 px corner displacement, looks like a
+  slight zoom; back by 17:20; filenames switch from :06 to :00 there). Both clips are **tuning**.
+- Consequence for 4.3: one mean per camera; 6/300 clips get slightly weaker background removal. Not per-view means.
+- Disclosure: this check decoded one frame from every clip, including test clips. No labels, nothing tuned.
+
+**3. `empty_37` and `src_status` — no official definition exists** (searched: repo READMEs, Kitware `status.csv`
+(activity counts only) and `list-of-annotated-meva-clips.txt` fetched via `git show`, the 3 PDFs in `documents/`,
+web search). Evidence-based reading:
+- `empty_37` = "clip annotated, none of the 37 activities present": all 9 evaluation-level empty clips of ours are in
+  Kitware's annotated-clip list (which counts `empty_37` as a row); the marker never co-occurs with a real activity in
+  any of 1,146 files; never-annotated clips have no file at all; the eval README says all instances are annotated.
+- Training-level (19 of our 28 empty RGB clips) has no official statement. 👤 Ashutosh watched the busiest one
+  (dev, `2018-03-11.14-05-02.14-10-01.school.G424`): **nothing there**. Keep counting hits on empty clips as wrong
+  (current metric behaviour); no change.
+- `src_status`: meaning unknown. Evaluation-level events only have good/janitor/gladiator2; `not_good` and
+  `unaudited` occur only in training-level labels (fits the "reduced audit" wording; inference). Tuning+dev: 122 of
+  5,358 Kitware events (2.3 %). 2 of 12 dev specific queries target `unaudited` events (written from visible
+  keyframes, so usable). **Decision (Ashutosh): option A — keep all events as ground truth**, meaning recorded as
+  unknown.
+
+**4. CLIP centre-crop — measured on tuning. Decision (Ashutosh): 2 overlapping square tiles as main, pad-to-square as
+the ablation (at 4.4).**
+- open_clip ViT-B-16 preprocessing verified: `Resize(224)` (short side) + `CenterCrop(224)`. Keeps the central 56 %
+  of the width on RGB (1920×1080), 68 % on IR (352×240).
+- Tuning, 3,586 events / 1.53 M actor box-frames, event "lost" = >90 % of box area outside the square:
+  **28 % lost overall**, 13 % partly cut. G424 42 %, G436 40 %, G330 52 % (n = 23), G340 15 %, G336 9 %, G474 0 %.
+  Vehicle start/stop 134/709 lost; door/structure activities ~50 % lost.
+- Plan for 4.2: tiles x 0-1080 and 840-1920 (full res, 6 vectors/frame instead of 5); object crops padded to a
+  square, never centre-cropped. New config key (e.g. `appearance.frame_mode: tiles2 | pad`) added at 4.2, with ask.
+  If 4.4 shows no difference, take pad (simpler).
+
+**5. `appearance.pretrained` candidates — three tags, decision at the start of 4.2 on tuning.**
+| tag | model name | weights source (open_clip `hf_hub`) | revision | license (verified) |
+|---|---|---|---|---|
+| `laion2b_s34b_b88k` | `ViT-B-16` | `laion/CLIP-ViT-B-16-laion2B-s34B-b88K` (safetensors) | `7288da5a` | **MIT** (model card front matter) |
+| `datacomp_xl_s13b_b90k` | `ViT-B-16` | `laion/CLIP-ViT-B-16-DataComp.XL-s13B-b90K` (.bin only; open_clip loads with `weights_only=True`) | `d110532e` | **MIT** (model card front matter) |
+| `openai` | `ViT-B-16-quickgelu` | `timm/vit_base_patch16_clip_224.openai` (safetensors) | `977e3dd0` | **Apache-2.0** on the timm copy (card front matter); original release `openai/CLIP` is **MIT** (its LICENSE file) |
+- Licenses were checked before downloading. Ruled out on license: `dfn2b` (apple-amlr; terms not read), `metaclip_*`
+  (CC-BY-NC-4.0).
+- Published benchmarks (open_clip `openclip_retrieval_results.csv` / `openclip_results.csv`), text→image retrieval
+  COCO R@1 / Flickr R@1: laion2b 0.423 / 0.698, datacomp_xl 0.402 / 0.676, openai 0.331 / 0.622. ObjectNet:
+  datacomp_xl 0.635, laion2b 0.560, openai 0.553. Used only to choose candidates; web benchmarks don't decide.
+- Downloads approved by Ashutosh (~1.2 GB); disk 83 → 82 GB free. **GPU check PASS, exit 0, all three**, re-run with
+  `HF_HUB_OFFLINE=1` (all cached). laion2b and datacomp_xl ran on the unchanged project config (`ViT-B-16`) — the
+  project config's first PASS. openai ran with a scratch config set to `ViT-B-16-quickgelu`. All: (3, 512) fp16,
+  366 MiB peak allocated. Colour test, matching vs best non-matching: laion2b 0.291-0.325 vs ≤0.235; datacomp_xl
+  0.306-0.317 vs ≤0.211.
+- Decision method (agreed): at the start of 4.2, on **tuning**, templated prompts from activity names (e.g. "a person
+  opens a vehicle door") → mAP over tuning events per tag; the 9 tuning queries as a secondary check. Keeps dev free
+  for the 4.4 ablation. `config.yaml` unchanged until then (`pretrained: TBD`).
+- **⚠ All three model cards (identical text) state:** "**Any** deployed use case of the model - whether commercial or
+  not - is currently out of scope", image search in a constrained environment is "not recommended unless there is
+  thorough in-domain testing", and "use cases which would fall under the domain of surveillance and facial
+  recognition are always out-of-scope regardless of performance". This is an intended-use statement, not a license
+  term, and it applies to every CLIP variant in the plan. Rewind is a non-deployed research prototype on scripted
+  footage, with no face recognition and a held-out in-domain evaluation — but it is CCTV search. Must be stated
+  plainly in the README limitations and the final report (10.1), and is worth having an answer for in front of a
+  judge.
+
+**6. Contrib (IR) label frame base and timing — VERIFY closed. Decision (Ashutosh): no code change; document.**
+- **Convention: 0-based frames, inclusive end** (same as Kitware KPF). NIST's JSON spec (p9) says frames begin at 1
+  and a track ends with an *empty* box at the first absent frame; neither source follows it: in all 848 local .json
+  records (CMU-v2 510, UMD-IBM 338) the "off" frame carries a real box and there are 0 empty terminators.
+  **Proven 0-based for CMU-v2** (14 records start on frame 0). **UMD-IBM** never uses frame 0, so its base is
+  unprovable from data: **≤ 1 frame (33 ms) either way**; exact start offsets vs Kitware show no spike at 0 or +1
+  (0: 64, +1: 58, −1: 41) — label noise ≫ 1 frame.
+- **Timing vs Kitware**, measured on shared RGB clips **outside the selection** (no split touched; CMU 838 clips,
+  UMD 471), contrib − Kitware, one-to-one match by type + temporal IoU > 0:
+
+| | start median | start p10..p90 | end median | end p10..p90 | within 2 s (start / end) |
+|---|---|---|---|---|---|
+| UMD-IBM, all (n = 3,516) | +0.63 s | −0.4..+1.9 s | −0.40 s | −1.5..+0.6 s | 88 % / 91 % |
+| CMU-v2, all (n = 5,442) | −0.13 s | −3.3..+1.2 s | +0.03 s | −1.3..+2.8 s | 78 % / 81 % |
+| UMD-IBM, vehicle start/stop (n = 137) | +0.73 s | −0.5..+2.3 s | −0.27 s | −1.9..+1.2 s | 87 % / 85 % |
+| CMU-v2, vehicle start/stop (n = 278) | −1.07 s | −5.7..+1.0 s | +0.68 s | −1.2..+5.1 s | 59 % / 68 % |
+
+  UMD spans are slightly tighter (start later, end earlier; fits the 1.3 eye check); CMU vehicle spans are wider and
+  noisier (start ~1 s early, tail to −5.7 s). With tIoU ≥ 0.3 the picture is the same, a bit narrower. Contrib labels
+  match only 18 % (CMU) / 28 % (UMD) of Kitware activities (incompleteness, as at 0.3).
+- **The 2 s label widening is a config value:** `metrics.event_tolerance_s: 2.0` (`configs/config.yaml`).
+  `match_events` / `precision_recall` take `tolerance_s` as a required argument (no default); the only literal 2.0s
+  are toy inputs in tests. No caller exists yet — **step 6.1/8.2 must pass the config value.**
+- **IR caveat for 8.2 (pre-committed):** IR ground truth = third-party labels; incomplete (recall-type metrics only)
+  and offset from Kitware conventions by ~0.5-1 s (CMU vehicle events up to ~6 s). Hits use clip overlap with ±5 s
+  context, so specific-query hits are rarely affected; seconds-watched shifts by ~1 s. State this next to every IR
+  number. **IR event-rule recall in 8.2 is reported per label source (CMU-v2 vs UMD-IBM)**, plus merged.
+
+**7. Dev is the light-traffic regime — cannot be fixed; reporting rules pre-committed.**
+- Facts (2.1): dev = 03-11 13:50 block; G330 (indoor gym) 72 % of dev activities; G340 21 activities; RGB vehicle
+  start/stop 40/42 in dev vs 590/607 in test (dense 03-07/03-15 traffic); dev labels mostly training-level. Tuning has
+  dense traffic but almost no indoor activity (G330 23).
+- Re-splitting is not allowed: queries are frozen (Gate 2.2) and `make_splits --rebuild` refuses once HASHES exist.
+- Pre-committed:
+  - 6.1 (tuning) and 8.2 (test): event-rule precision/recall **per camera**, plus overall; IR recall per label source.
+  - Gate 6.2: the dev decision states its n (6 vehicle_event queries: 2 category + 4 specific) and that dev has
+    82 RGB vehicle start/stop events and little queueing; the precision/recall half of the gate is on **tuning**
+    (CLAUDE.md 1.7), where queues exist.
+  - 4.1 dedup and 7.4 fusion weights are tuned on outdoor-heavy tuning: the 4.4/8.1 dev reports show G330 (indoor)
+    separately, to show whether tuning transfers.
+  - 8.2: per-camera breakdown of the headline metric as well (descriptive, small n).
+
+**8. Small samples — cannot add queries after freezing; reporting rules pre-committed.**
+- Query counts: tuning 9 (3 category, 6 specific), dev 17 (5, 12), test 34 (10, 24). Dev by qtype: action 7
+  (3 category + 4 specific; Gate 5.1), vehicle_event 6 (Gate 6.2), appearance 4. IR specific: dev 2, test 4.
+- Pre-committed:
+  - Every headline and gate number with a bootstrap 95 % CI (`metrics.bootstrap_n`, `ci_level`), per-query table,
+    median and worst case (as CLAUDE.md 1.10).
+  - Breakdown cells with **n < 5 queries**: per-query values and counts only, labelled "descriptive, n = k"; no CI,
+    no claims (e.g. RGB vs IR on test: 4 IR specific queries).
+  - Gate comparisons (4.4, 5.1, 6.2, 8.1) are **paired per query**: report wins / ties / losses and a paired
+    bootstrap CI of the difference. Needs a small addition to `rewind/eval/metrics.py` (paired bootstrap) at 4.4.
+  - **PROPOSED — Ashutosh to confirm before Gate 4.4:** adopt the more complex variant only if its mean is better
+    **and** it wins on more queries than it loses; otherwise keep the simpler one (CLAUDE.md 8.1: "if two are close,
+    pick the simpler one"). With n = 6-7 at Gates 5.1/6.2, a CI that excludes 0 is not required (it would almost
+    never happen) but is reported.
+
+**Process notes**
+- Items 3 and 4 read split labels with raw SQL joins on `blocks.split` in scratch scripts, not through the guarded
+  accessors in `rewind/eval/splits.py`. Event-level analyses were filtered to tuning/dev. Exception: item 3 counted
+  clip-level label status over all clips incl. test (28 empty RGB clips: 9 evaluation-level, all in Kitware's
+  annotated list; 19 training-level) — the same counts the 1.3 report already holds. No test events, boxes or
+  queries were read; nothing was tuned.
+- Item 3 read `queries_tuning.csv` / `queries_dev.csv` with pandas directly, bypassing `load_queries`' hash check
+  (read-only; hashes unchanged — see below).
+- Item 6 used only clips outside the selection; items 7-8 used numbers already recorded in 2.1/2.2.
+
+**Verify by hand**
+- Contact sheets (scratchpad, not kept): G340 morning vs afternoon view, G336 03-07 17:00.
+- Read one model card's "Out-of-Scope Use" section yourself, e.g.
+  https://huggingface.co/laion/CLIP-ViT-B-16-laion2B-s34B-b88K
+
+---
+
+## Later (deferred, not in current scope)
+
+- **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every
+  CLIP B/16 candidate on text→image retrieval (COCO R@1 0.478 vs 0.423 for the best permissive CLIP, laion2b).
+  **Deferred (Ashutosh, 25 Oct): scope stays CLIP ViT-B/16** — a different model family is a scope change (CLAUDE.md
+  1.7), web benchmarks don't predict CCTV performance, and there is no time in the 30 Oct schedule to re-validate.
+  License, fp16 VRAM and preprocessing not checked (VERIFY if revisited).
