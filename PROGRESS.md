@@ -551,8 +551,9 @@ Conclusion: label frame numbers = proxy playback time (frame / 30) for both Kitw
   (e.g. scaling during decode). Not measured.
 - Step 3.1: the 5 fps scaling step is sensitive to core type (7.0 vs 13.9 s per clip); plan on the slowest-run
   figure (~1 h) for the decode part of the motion pass.
-- `results/experiments.csv` row 1 (c388f15) carries an invalid IR 5 fps value with no mark in the file itself; the
-  report excludes it. 👤 Your call whether its notes may get an "INVALID IR 5 fps" prefix (an edit of the log).
+- `results/experiments.csv` row 1 (c388f15): its IR 5 fps value is invalid. Ashutosh left the call to me; its notes
+  now end with "INVALID: decode_ir_keep_5_fps_x_realtime and proj_decode_keep_5_fps_h (...)". Only that notes field
+  was edited (numbers untouched, checked by diff); the report's history still finds all 4 runs.
 - Not measured: detector (Gate 3.3), MOG2, crop extraction/preprocessing, action branch, an end-to-end run.
 
 **Verify by hand**
