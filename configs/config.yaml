@@ -76,6 +76,20 @@ queries:
   specificity: [vague, moderate, detailed]   # equal thirds per split, assigned by the seed
   strip_width: 1280              # keyframe sheet width (px): middle frame on top; start, end, zoom below
   review_n: 15                   # random rows shown for review before freezing (scripts.review_queries)
+metrics:
+  # step 2.3 (rewind/eval/metrics.py). Definitions: module docstring; a hit is on the same camera only.
+  recall_k: [1, 5, 10]           # specific queries (CLAUDE.md 1.10)
+  category_k: [10, 50]           # mAP@k and instance Recall@k for category queries (RGB footage only, Gate 0.3)
+  bootstrap_n: 2000
+  bootstrap_seed: 23
+  ci_level: 0.95
+  event_tolerance_s: 2.0         # detected vs annotated events: spans widened by this (clocks +/- 1 s each)
+baselines:
+  # step 2.3 (rewind/eval/baselines.py, scripts/run_baselines.py)
+  segment_s: 60                  # baselines rank 60 s segments (Rewind clips are capped at 60 s + context)
+  random_seed: 23
+  random_repeats: 100            # random order: metrics averaged over this many seeded shuffles per query
+  witness_window_s: 600          # witness time +/- 10 min (CLAUDE.md 1.10); witness time = true event middle
 sampling:
   appearance_fps: 1
   max_gap_s: 10

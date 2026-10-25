@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: 2.2 queries frozen (Gate 2.2 passed); next: 2.3 metrics + baselines**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done (2.3 metrics + baselines); next: Phase 3 — 3.1 MOG2 motion pass**
 
 ---
 
@@ -740,3 +740,64 @@ HASHES: queries_tuning 6c70f93c…, queries_dev caea1717…, queries_test b033a9
 - `cd eval/queries && sha256sum -c HASHES` → 7 × OK.
 - Optional: open `eval/queries/keyframes/tes-s09.jpg` — the cyan box (dropped-off person) is from ~7 s earlier.
 - Skim `eval/queries/queries_dev.csv` (17 rows): these drive Gates 4.4, 5.1, 6.2.
+
+---
+
+## Step 2.3 — Metrics + simple baselines (Sun 25 Oct)
+
+**Done**
+- `rewind/eval/metrics.py` (pure functions): Recall@k, seconds watched with the miss rule (specific); mAP@k and
+  instance Recall@k with don't-care spans (category); one-to-one temporal-overlap precision/recall for detected vs
+  annotated events (used from 6.1); seeded percentile bootstrap CI.
+- `rewind/eval/baselines.py`: 60 s segments (each clip cut into round(d / 60) equal pieces), sequential, random
+  (seeded), witness ±10 min.
+- `scripts/run_baselines.py`: tuning + dev only, through the guarded accessors (test refused); 6 rows in
+  `results/experiments.csv` (3 baselines × 2 splits); `results/reports/baselines_2.3.md` (summary with CIs,
+  breakdowns by qtype / modality / specificity, per-query tables). `--no-log` re-renders the report only.
+- `tests/test_metrics.py`: 17 tests, every expected value hand-computed in a comment (incl. category ground truth on
+  an in-memory DB). Suite: 245 pass.
+
+**Key numbers** (median seconds watched before the event starts, specific queries; Recall@10; category mAP@10)
+| split | sequential | random | witness (perfect) |
+|---|---|---|---|
+| tuning (6 specific, 3 category) | 8,091 s (135 min), R@10 0.056, mAP@10 0.35 | 9,063 s, R@10 0.027, mAP@10 0.29 | 3,126 s (52 min), R@10 0.056 |
+| dev (12 specific, 5 category) | 5,932 s [5,476–6,561] (99 min), R@10 0.083, mAP@10 0.10 | 6,413 s, R@10 0.050, mAP@10 0.09 | 3,237 s [2,325–3,754] (54 min), R@10 0.083 |
+
+**Decisions (definitions, in the metrics docstring)**
+- **Hit = overlap on the same camera** (no cross-camera credit: MEVA has no cross-camera links). Settles the 2.2 open
+  question in the strict direction.
+- **Seconds watched** = full clips before the first hit + time into the hit clip until the event starts. **Miss rule**
+  read literally: no hit in the list → the list's duration + a full review of all footage in the split. Baselines rank
+  all footage, so they never miss; the rule bites only on truncated lists (Rewind).
+- **Camera order**: sequential and witness are averaged exactly over all 720 camera orders (no arbitrary order).
+  Random: mean of 100 seeded shuffles per query.
+- **Witness time = the event's true middle** (a perfect witness: the baseline's best case); specific queries only.
+- **Category**: ground truth = Kitware RGB activities of the type in the split (cut pieces joined); boundary-flagged =
+  don't care; IR segments left out of category ranking (Gate 0.3). AP@k: a clip is relevant only if it finds a not
+  yet found activity; denominator min(k, #activities).
+- **Event matching**: the annotated span is widened by `metrics.event_tolerance_s` (2 s), once.
+- Config sections `metrics:` and `baselines:` added.
+
+**PROMPT R** (inline). Found and fixed:
+- **Bug (found by a sanity check before logging):** G330 clips are 300.33 s, so fixed 60 s cutting left a 0.33 s
+  sliver per clip, each costing one rank (dev-s04 ranked 10 instead of 9). Now equal pieces; test added. The logged
+  rows were computed after the fix.
+- **Bug:** `match_events` padded both spans in the overlap test (a 2 s tolerance allowed a 4 s gap) and measured the
+  overlap with one padded span. Now only the label is widened, once; regression test. Not used by any logged result.
+- Untested runner logic (`category_truth`, averaging over rankings) → toy tests.
+- Report cosmetics (`nan`, `12.0`) fixed via `--no-log` re-render; `experiments.csv` byte-unchanged and the report
+  byte-identical after the review fixes (logged numbers still valid).
+
+**Open issues**
+- Sequential beats random on R@k only because 5 of 12 dev events fall in the first 5 min of the dev block (scripted
+  footage), not because sequential review is better.
+- Baseline category mAP is far from 0 (busy roads: many 60 s segments contain a vehicle event); compare Rewind with
+  these baselines, not with 0. Tuning mAP (0.35) is high because of dense traffic (351 vehicle_stops activities).
+- Small samples: 6 tuning and 12 dev specific queries → wide CIs; breakdown cells have n = 2-5.
+- Motion-ranked baseline: step 3.2.
+
+**Verify by hand**
+- Hand check of one toy case (witness ordering, expected 190 s): **done by Claude Code at Ashutosh's request**, not by
+  Ashutosh — an independent hand check is still open if wanted:
+  `sed -n '/def test_witness_window_first_then_the_rest/,/^def /p' tests/test_metrics.py`
+- `less results/reports/baselines_2.3.md` (dev summary as above).
