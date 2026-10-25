@@ -73,6 +73,46 @@ CREATE TABLE IF NOT EXISTS proxies (
     settings      TEXT    NOT NULL,          -- JSON of the proxy config used
     created_at    TEXT    NOT NULL
 ) STRICT;
+
+-- Step 1.3 (rewind/ingest/annotations.py). Rebuilt together by scripts/build_events.py.
+CREATE TABLE IF NOT EXISTS clip_labels (
+    video_id      INTEGER PRIMARY KEY REFERENCES videos(video_id),
+    label_status  TEXT    NOT NULL CHECK (label_status IN ('events', 'empty', 'none')),
+    label_source  TEXT    NOT NULL CHECK (label_source IN ('kitware-eval', 'kitware-train', 'contrib', 'none')),
+    n_events      INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS events (
+    event_id      INTEGER PRIMARY KEY,
+    video_id      INTEGER NOT NULL REFERENCES videos(video_id),
+    camera_id     TEXT    NOT NULL,
+    activity_type TEXT    NOT NULL,
+    start_frame   INTEGER NOT NULL,          -- 0-based decoded-frame index, inclusive
+    end_frame     INTEGER NOT NULL,          -- inclusive
+    start_s       REAL    NOT NULL,          -- seconds in the clip (= proxy playback time): [start_s, end_s)
+    end_s         REAL    NOT NULL,
+    start_time    TEXT    NOT NULL,          -- local wall-clock ISO, accurate to about +/- 1 s (see above)
+    end_time      TEXT    NOT NULL,          -- exclusive (just after end_frame)
+    label_source  TEXT    NOT NULL CHECK (label_source IN ('kitware-eval', 'kitware-train', 'contrib')),
+    sources       TEXT    NOT NULL,          -- JSON list: Kitware folder, or the contrib sources merged into this event
+    src_ids       TEXT    NOT NULL,          -- JSON list of original activity ids, as strings (some are 64-bit hashes)
+    src_status    TEXT,                      -- Kitware only; meaning undocumented (VERIFY)
+    actor_types   TEXT,                      -- JSON list of Kitware object types; NULL for contrib (all 'Person')
+    n_actors      INTEGER NOT NULL,
+    n_actors_with_boxes INTEGER NOT NULL,
+    at_clip_start INTEGER NOT NULL CHECK (at_clip_start IN (0, 1)),   -- start_frame == 0
+    at_clip_end   INTEGER NOT NULL CHECK (at_clip_end IN (0, 1)),     -- end_frame == n_frames - 1
+    group_id      INTEGER NOT NULL,          -- smallest event_id of the pieces of one activity cut at clip boundaries
+    CHECK (0 <= start_frame AND start_frame <= end_frame)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS event_boxes (
+    event_id      INTEGER NOT NULL REFERENCES events(event_id),
+    actor         INTEGER NOT NULL,          -- index within the event (0, 1, ...), never an identity
+    frame         INTEGER NOT NULL,
+    x1 INTEGER NOT NULL, y1 INTEGER NOT NULL, x2 INTEGER NOT NULL, y2 INTEGER NOT NULL,  -- as annotated, not clipped
+    PRIMARY KEY (event_id, actor, frame)
+) STRICT, WITHOUT ROWID;
 """
 
 
@@ -134,6 +174,14 @@ class Video:
         if not 0 <= frame < self.n_frames:
             raise ValueError(f"Frame {frame} outside {self.clip} (0..{self.n_frames - 1})")
         return self.start_time + timedelta(seconds=frame_to_seconds(frame, self.fps))
+
+    def frame_end_time(self, frame: int) -> datetime:
+        """Wall-clock instant just after `frame` (exclusive end of an inclusive frame range ending at `frame`).
+
+        One rounding to the microsecond, like end_time: frame_time(f) + 1/fps would round twice and can land 1 us
+        early, so the last frame's end would not equal end_time."""
+        self.frame_time(frame)  # bounds check
+        return self.start_time + timedelta(seconds=(frame + 1) / self.fps)
 
     def frame_at(self, t: datetime) -> int:
         frame = seconds_to_frame((t - self.start_time).total_seconds(), self.fps) if t >= self.start_time else -1

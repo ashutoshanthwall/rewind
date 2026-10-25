@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1, 1.2 done); next: 1.3 — Annotated events table**
+Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1, 1.2 done; 1.3 built, 👤 5-event check pending); next: 1.4 — Throughput**
 
 ---
 
@@ -369,3 +369,109 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1, 1.2 done); next
 - Done: browser play + seek on G340 and G474 proxies.
 - Optional: read `scripts/make_proxies.py` `ffmpeg_command` and be able to explain `setpts=N/(fps*TB)` and
   `-fps_mode passthrough`, and why the alignment check uses difference images.
+
+---
+
+## Step 1.3 — Annotated events table (Sun 25 Oct) — 👤 5-event check PENDING
+
+**Done**
+- Box files fetched: the Kitware `geom.yml` of the selected clips (298 sparse-checkout paths incl. contrib IR files;
+  0.958 GB by GitLab API sizes, under the 1 GB ask-first limit; 2 min 18 s; git store +100 MB).
+  `scripts/annotation_patterns.py` now generates these patterns from `data/selection.txt` (checked: selects exactly
+  the 252 Kitware box files present), and the recipe in `docs/meva_notes.md` uses it.
+- Investigation before coding (5 read-only investigators, each re-checked by an independent skeptic with their own
+  scripts): KPF semantics, format variants, clip-boundary handling, contrib IR labels, boxes vs video by eye and by
+  optical flow. Results in `docs/meva_notes.md` → new section "Annotation conventions".
+- `rewind/ingest/annotations.py`: Kitware parsing (both KPF line styles; activities/types via yaml, ~1 GB of geom
+  line by line with key regexes, anything unrecognised raises), contrib NIST `.json` parsing (IR only),
+  `merge_contrib`, clip-boundary linking (`boundary_links`, `group_ids`), IoU helpers. Every consistency check raises:
+  dense geom coverage per actor, spans inside the clip, types for every actor, no orphan tracks, no duplicate ids,
+  contrib localization shape and box coverage.
+- `scripts/build_events.py`: builds `clip_labels`, `events`, `event_boxes` in `data/rewind.sqlite` in one transaction
+  (report generated inside it); `--rebuild` replaces them and refuses once `eval/queries/HASHES` exists (frozen
+  queries reference event ids). `--spot-check` prints the 5 events to check by eye with ready ffplay commands.
+  Report: `results/reports/events_1.3.md`.
+- Schema (in `rewind/ingest/manifest.py`): `events` (event_id, video_id, camera_id, activity_type, start/end frame
+  (inclusive), start_s/end_s (proxy time), start_time/end_time (wall-clock ISO, end exclusive, fixed width),
+  label_source, sources, src_ids, src_status, actor_types, n_actors, n_actors_with_boxes, at_clip_start/end,
+  group_id); `event_boxes` (event_id, actor index, frame, x1..y2); `clip_labels` (status events/empty/none).
+  `Video.frame_end_time` added (one rounding, = `end_time` on the last frame).
+- `tests/test_annotations.py`: 27 tests. Both KPF line styles from real lines; both empty-marker styles alone;
+  every guard; contrib JSON (x,y,w,h conversion, zero-length drop, boxes outside the span refused, other-clip keys
+  refused); hand-computed IoU (25/175, 90/110); merge transitivity in the order that breaks a naive union;
+  boundary linking (each exclusion alone, one-to-one on both sides, boxes taken at A's last / B's first frame);
+  end-to-end builds on toy trees: RGB with a linked cut pair and an empty clip (times hand-computed), IR with two
+  merged sources / no labels / a Kitware marker, Kitware activities on IR refused, no linking across cameras.
+  Mutation check on a scratch copy: 5 mutants that the first test version let through now each fail.
+- PROMPT R as an independent review (5 lenses: time/frame arithmetic, silent failures/config, test quality with
+  hand mutation testing, independent audit with its own parser, project rules; each finding re-checked by a
+  skeptic). The audit re-derived **all 9,678,632 Kitware boxes, every per-clip count, all 220 links and all 51 IR
+  clips: no data error**. 20 smaller findings, all fixed:
+  1. ISO times without microseconds when they were 0 (918 rows): pandas could not parse the column → fixed width.
+  2. `frame_end_time` rounded twice: 5,508 end times 1 µs early → one rounding; clip-end events now equal the
+     video end exactly (416/416).
+  3. Report written after the commit → inside the transaction.
+  4. `--rebuild` could silently renumber events after Gate 2.2 → refuses when `eval/queries/HASHES` exists.
+  5. Contrib boxes outside the span were trimmed silently → raise (0 cases in the data).
+  6. Kitware boxes not cut to the event span (1 actor, 18 frames) → cut, same rule as contrib.
+  7. Spot check: fps hardcoded as 30; `ffplay -ss` starts at the previous keyframe (up to 8 s early) with no clock
+     → fps from the manifest, commands draw a clock and the boxes, instructions explain the pre-roll.
+  8. Fresh clone could not fetch the box files → `scripts/annotation_patterns.py` + recipe.
+  9. `docs/meva_notes.md` stale, the referenced "Annotation conventions" section missing → written.
+  10. Box-timing findings recorded nowhere → VERIFY notes in code and docs, caveat in the IR spot-check entry.
+  11. Config comment counts wrong (25/19 → 24/18; the IoU values are continuous around 0.3: a judgement call).
+  12. IR clips without events merged three different reasons → kept 'none' (not 'empty': IR labels are
+      incomplete), reasons counted in the report.
+  13. Test gaps (8): see the test list above.
+- 👤 Ashutosh: chose to run step 1.4 before doing the 5-event check (their call); the check is still to do.
+
+**Key numbers**
+- **16,702 events** in 300 clips: Kitware RGB **16,527** (= the 0.3 survey exactly; 7,187 evaluation-level,
+  9,340 training-level), contrib IR **175**. 35 of 37 activity types occur.
+- **Vehicle start/stop:** RGB 981 `vehicle_starts`, 1,000 `vehicle_stops` (G336 266/273, G340 128/127,
+  G424 292/296, G436 295/304; none on the indoor G330); IR 12 / 14.
+- Per camera: G330 6,080 · G336 3,034 · G340 1,009 · G424 3,100 · G436 3,304 · G474 175.
+- Clips: RGB 221 with events + 28 `empty_37` (G330 14, G340 5, G424 4, G336 3, G436 2); IR 29 with events + 22
+  without (18 no annotation, 3 Kitware empty_37 marker, 1 contrib file with 0 records).
+- Contrib: 205 raw records → 3 zero-length dropped → 27 merged away (duplicates/overlaps) → 175 events.
+- Clip boundaries: 244 back-to-back clip pairs; **220 links** → 16,482 groups (198 chains: 182 of 2 pieces, 11 of 3, 4 of 4, 1 of 5).
+  Events at a clip edge: 400 start on frame 0, 416 end on the last frame.
+- `event_boxes`: 9,717,873 rows. DB 249 MB. Build 50 s.
+- Tests: **163/163 pass**.
+
+**Decisions**
+- **Event = one annotated record within one clip of one camera**, as in the source files. The same real activity
+  can appear on several cameras (never linked: no cross-camera linking) and, when cut at a clip boundary, as 2+
+  pieces sharing a `group_id` (within one camera, consecutive clips; a link between annotation pieces, not an
+  identity). Evaluation (2.x) should score against groups, so a cut event is neither counted twice nor missed.
+- **Deviation from CLAUDE.md 1.3:** `boxes` is a separate table `event_boxes` (9.7M rows) instead of a column, and
+  `events` has extra columns (frames, proxy seconds, source, flags, group_id) that later steps need.
+- **RGB = Kitware only; IR = contrib only** (Gate 0.3). Contrib read from the `.json` (complete boxes), merged with
+  box IoU >= 0.3 (`annotations.contrib_merge_min_box_iou`; time-only merging joined two different vehicles).
+  Contrib object types ('Person' everywhere) not used.
+- **Boundary links** need same type + box IoU >= 0.5 at the join (`annotations.boundary_merge_min_box_iou`), one-to-one.
+- **`src_status` kept, not filtered** (meaning undocumented). Boxes stored as annotated (not clipped to the frame).
+- **IR clips without events are 'none', never 'empty'**: contrib labels are incomplete, and Kitware has no real IR labels.
+- **Spot check stratified**: one vehicle start/stop and one other activity from each Kitware level (they come from
+  different annotation pipelines, incl. the two line styles) + one IR event; seed 13.
+- New config section `annotations:` (contrib sources, two IoU thresholds), values justified in comments.
+- Not an experiment: no row in `experiments.csv`.
+
+**Open issues**
+- 👤 **5-event check not done yet** (below). If an event is not where the table says, step 1.3 is not done.
+- VERIFY: meaning of `src_status` (253 records are not_good/unaudited) and of `empty_37` (checked-and-absent vs
+  not annotated: matters for the 28 empty RGB clips, 14 of them on G330, when counting false positives).
+- VERIFY: contrib frame base (0- vs 1-based; 1 frame); CMU-v2 box timing (seen 20-40 frames ahead on 1 track);
+  Kitware boxes possibly 0-1 frame ahead (3 tracks). Event time spans are unaffected.
+- Carried over: training-level label completeness (9,340 of the RGB events are training-level).
+- Step 2.1 must keep a group's pieces in one split (block boundaries on clip boundaries, or assign by group).
+- Step 6.1: vehicle start/stop pieces at a clip edge are truncated (start/end reflect the cut, not the motion).
+- `event_id` is a running number: stable for the same annotations + config, but rebuilt ids can change.
+  Frozen queries (2.2) should also store (clip, src_ids) so ground truth can be re-resolved.
+
+**Verify by hand — 👤 the 5-event check (most important manual check of the week)**
+- From the repo root, print the events and commands: `uv run python -m scripts.build_events --spot-check`
+- For each event: run its `ffplay` line, wait for the yellow clock to reach the in-file start time, watch until
+  the end time. Does the named activity happen there, at the red box? Note "ok" or what you saw instead.
+- Event 3 is IR with a third-party label: judge the time span, not the box.
+- Optional: open `results/reports/events_1.3.md`; read `docs/meva_notes.md` "Annotation conventions".
