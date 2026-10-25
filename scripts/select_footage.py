@@ -71,6 +71,13 @@ def markdown_table(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def rows_table(headers: list, rows: list[list]) -> str:
+    """Markdown table from a header list and row lists."""
+    lines = ["| " + " | ".join(map(str, headers)) + " |", "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(map(str, row)) + " |" for row in rows]
+    return "\n".join(lines)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--cameras", nargs="+", required=True, help="RGB camera ids")

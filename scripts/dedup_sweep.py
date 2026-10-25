@@ -14,7 +14,7 @@ Never reads the test split (split_video_ids / split_event_ids refuse it). One ex
 
 Run from the repo root (~10 min):
   uv run python -m scripts.dedup_sweep
-  uv run python -m scripts.dedup_sweep --no-log --clips <clip> ...   (trial on a few clips; no row, no report)
+  uv run python -m scripts.dedup_sweep --clips <clip> ... --report <scratch.md>   (trial on a few clips; no row)
 """
 
 import argparse
@@ -34,7 +34,7 @@ from rewind.ingest.manifest import connect, load_videos
 from rewind.motion import store
 from rewind.paths import REPO_ROOT, display_path
 from rewind.video import sampled_frames
-from scripts.select_footage import markdown_table
+from scripts.select_footage import rows_table
 
 FULL_RES = 10 ** 6   # sampled_frames max_width that never scales
 
@@ -74,7 +74,7 @@ def main() -> None:
     p.add_argument("--db", type=Path, default=REPO_ROOT / "data" / "rewind.sqlite")
     p.add_argument("--art", type=Path, default=REPO_ROOT / "artifacts")
     p.add_argument("--report", type=Path, default=REPO_ROOT / "results" / "reports" / "dedup_4.1.md")
-    p.add_argument("--clips", nargs="+", help="only these tuning clips (trial: implies --no-log, no report)")
+    p.add_argument("--clips", nargs="+", help="only these tuning clips (trial: implies --no-log; pass a scratch --report)")
     p.add_argument("--no-log", action="store_true")
     p.add_argument("--allow-dirty", action="store_true")
     args = p.parse_args()
@@ -140,8 +140,6 @@ def main() -> None:
         print(f"thresh {r['thresh']}: kept {r['kept']} ({r['kept_share']:.3f}), recall {r['recall']:.4f}, "
               f"strict {r['recall_strict']:.4f}")
     print("choice:", choice)
-    if args.clips:
-        return
 
     cams = sorted(cands_n)
     groups = ["all", *cams, "rgb", "ir", "vehicle_start_stop", "other"]
@@ -156,7 +154,7 @@ def main() -> None:
         f"max gap {s['max_gap_s']} s; event widening {fps_tol} s.",
         "",
         "## Summary", "",
-        markdown_table(["threshold (share of frame)", "kept frames", "kept share", "pipeline recall (±tol)",
+        rows_table(["threshold (share of frame)", "kept frames", "kept share", "pipeline recall (±tol)",
                         "strict recall"],
                        [[r["thresh"], f"{r['kept']:,}", f"{r['kept_share']:.3f}", f"{r['recall']:.4f}",
                          f"{r['recall_strict']:.4f}"] for r in rows]),
@@ -166,16 +164,16 @@ def main() -> None:
            f"recall {choice['recall']:.4f})." if choice else "**No threshold reaches the target.**"),
         "",
         "## Kept share per camera", "",
-        markdown_table(["threshold", *cams],
+        rows_table(["threshold", *cams],
                        [[t, *(f"{kept[t][c] / cands_n[c]:.3f}" for c in cams)] for t in grid]),
         "",
         "## Pipeline recall (±tol) per group", "",
-        markdown_table(["threshold", *(f"{g} (n={hits[grid[0]][g][0]})" for g in groups)],
+        rows_table(["threshold", *(f"{g} (n={hits[grid[0]][g][0]})" for g in groups)],
                        [[t, *(f"{hits[t][g][1] / hits[t][g][0]:.4f}" if hits[t][g][0] else "-" for g in groups)]
                         for t in grid]),
         "",
         "## Strict recall (no widening) per group", "",
-        markdown_table(["threshold", *groups],
+        rows_table(["threshold", *groups],
                        [[t, *(f"{hits[t][g][2] / hits[t][g][0]:.4f}" if hits[t][g][0] else "-" for g in groups)]
                         for t in grid]),
         "",

@@ -147,6 +147,10 @@ appearance:
   crop_source: detection_then_motion   # detection_then_motion | motion | none
   crop_pad_frac: 0.2
   min_crop_px: 32
+  # step 4.2 crop choice (rewind/embed/crops.py; check: scripts/check_crop_ranking.py, results/reports/crops_4.2.md)
+  crop_rank: TBD                    # score_area | moving_first; decided by the tuning check
+  crop_moving_share: 0.5            # a detection is "moving" if motion boxes cover this share of its box (not tuned)
+  crop_dup_cover: 0.5               # a motion crop this covered by chosen detection crops is a duplicate (not tuned)
   mean_center: true
 action:
   enabled: TBD                      # Gate 5.1
