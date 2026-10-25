@@ -112,7 +112,18 @@ detection:
   fps: 5
   imgsz: 640
   conf_thresh: 0.3
+  nms_iou: 0.65                     # per-class NMS IoU, both backends (YOLOX eval default 0.65; Ultralytics 0.7)
+  batch_size: 16                    # frames per detector call
   classes: [person, car, truck, bus, motorcycle, bicycle]
+detection_check:
+  # step 3.3 (scripts/detector_smoke.py): recall vs annotated actor boxes on tuning footage
+  seed: 33
+  frames_per_clip: 60               # 5 fps grid frames with >= 1 GT box, per tuning clip
+  n_sample_images: 50               # annotated frames saved for viewing
+  gt_dup_iou: 0.9                   # GT boxes this similar in one frame = one object in two activities
+  match_iou: 0.5                    # Gate 3.3 recall threshold (set by Ashutosh)
+  report_ious: [0.5, 0.3]           # also reported at 0.3 (IR contrib boxes are loose / out of time)
+  size_edges: [0.05, 0.15]          # box height / frame height buckets
 appearance:
   model: ViT-B-16
   pretrained: TBD                   # exact open_clip tag

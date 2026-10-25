@@ -31,3 +31,6 @@ eval/queries/review.html
 
 # Background job logs + PID files (CLAUDE.md rule 16); key numbers go to PROGRESS.md / results/reports/
 results/logs/
+
+# Detector smoke-test sample frames (MEVA footage); redraw with scripts.detector_smoke
+results/figures/detector_smoke/
