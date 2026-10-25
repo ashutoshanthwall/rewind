@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: all 4 steps built (👤 1.3 5-event check pending); next: Phase 2 — 2.1 Splits**
+Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: done (1.3 5-event check passed); next: Phase 2 — 2.1 Splits**
 
 ---
 
@@ -372,7 +372,7 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: all 4 steps built (�
 
 ---
 
-## Step 1.3 — Annotated events table (Sun 25 Oct) — 👤 5-event check PENDING
+## Step 1.3 — Annotated events table (Sun 25 Oct) — 👤 5-event check passed
 
 **Done**
 - Box files fetched: the Kitware `geom.yml` of the selected clips (298 sparse-checkout paths incl. contrib IR files;
@@ -458,7 +458,8 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: all 4 steps built (�
 - Not an experiment: no row in `experiments.csv`.
 
 **Open issues**
-- 👤 **5-event check not done yet** (below). If an event is not where the table says, step 1.3 is not done.
+- 👤 5-event check: passed 5/5 (below). Event 3 (IR, UMD-IBM label) showed the stop ~1.5-2 s after the labelled
+  start: one more data point for the contrib timing VERIFY item.
 - VERIFY: meaning of `src_status` (253 records are not_good/unaudited) and of `empty_37` (checked-and-absent vs
   not annotated: matters for the 28 empty RGB clips, 14 of them on G330, when counting false positives).
 - VERIFY: contrib frame base (0- vs 1-based; 1 frame); CMU-v2 box timing (seen 20-40 frames ahead on 1 track);
@@ -469,7 +470,18 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: all 4 steps built (�
 - `event_id` is a running number: stable for the same annotations + config, but rebuilt ids can change.
   Frozen queries (2.2) should also store (clip, src_ids) so ground truth can be re-resolved.
 
-**Verify by hand — 👤 the 5-event check (most important manual check of the week)**
+**👤 5-event check — done by Ashutosh, 25 Oct, all 5 passed** (seed 13; ffplay with the label box drawn at the
+event's middle frame, fixed in place, and a playback clock). Observations, as reported:
+1. vehicle_stops, G436, kitware-eval, 2:11.9-2:13.7: "a car stopped for a few seconds where the red box was, then
+   left; the red box was there even after the car left" (expected: the box is drawn once, not tracked).
+2. vehicle_stops, G424, kitware-train, 4:46.8-4:47.8: passed, like 1.
+3. vehicle_stops, G474 IR, UMD-IBM, 4:38.4-4:40.8: passed, "car stops 40 to 42" (≈1.5-2 s after the labelled start).
+4. person_carries_heavy_object, G330, kitware-eval, 3:12.5-3:28.3: passed; "the boxes were in a fixed position and
+   objects were being carried at the back too".
+5. person_talks_to_person, G424, kitware-train, 4:01.8-4:49.4: passed; "they passed exactly through those 2 red boxes".
+Conclusion: label frame numbers = proxy playback time (frame / 30) for both Kitware levels and the IR contrib labels.
+
+**How the check was run (to repeat it)**
 - From the repo root, print the events and commands: `uv run python -m scripts.build_events --spot-check`
 - For each event: run its `ffplay` line, wait for the yellow clock to reach the in-file start time, watch until
   the end time. Does the named activity happen there, at the red box? Note "ok" or what you saw instead.
