@@ -30,6 +30,7 @@ import yaml
 from rewind.embed.dedup import Candidate, DedupConfig, analysis_gray, boxes_mask, candidate_step, keep_flags
 from rewind.eval.splits import split_event_ids, split_video_ids
 from rewind.experiment_log import log_experiment, run_stamp
+from rewind.ingest.annotations import VEHICLE_START_STOP
 from rewind.ingest.manifest import connect, load_videos
 from rewind.motion import store
 from rewind.paths import REPO_ROOT, display_path
@@ -119,7 +120,7 @@ def main() -> None:
             frames = np.array([x.frame for x, f in zip(cands, flags) if f])
             kept[thr][v.camera_id] += len(frames)
             for e in events[v.video_id]:
-                vehicle = e["activity_type"] in ("vehicle_starts", "vehicle_stops")
+                vehicle = e["activity_type"] in VEHICLE_START_STOP
                 for group in ("all", v.camera_id, v.modality, "vehicle_start_stop" if vehicle else "other"):
                     h = hits[thr][group]
                     h[0] += 1

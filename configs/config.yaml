@@ -94,8 +94,11 @@ sampling:
   # step 4.1 (rewind/embed/dedup.py, scripts/dedup_sweep.py, results/reports/dedup_4.1.md)
   appearance_fps: 1
   max_gap_s: 10
-  dedup_motion_pixel_thresh: TBD    # step 4.1, tuning split. Share of the analysis frame's pixels that changed
-                                    # (> dedup_pixel_delta) inside the motion boxes of the frame and the last kept one
+  dedup_motion_pixel_thresh: 1.0    # step 4.1, tuning split. Share of the analysis frame's pixels that changed
+                                    # (> dedup_pixel_delta) inside the motion boxes of the frame and the last kept one.
+                                    # 1.0 = the pixel test never keeps a frame: detections + max gap decide. Chosen by
+                                    # the AUTOPILOT.md rule (fewest kept frames at recall >= 0.95): every swept value
+                                    # had recall >= 0.99 (results/reports/dedup_4.1.md); keeps 62.9 % of candidates
   # Fixed before the sweep, not tuned:
   dedup_pixel_delta: 25             # grey levels; well above H.264/sensor noise in static areas (a few levels)
   dedup_det_iou: 0.5                # a detection is "unchanged" if a same-class box in the other frame has this IoU
@@ -151,6 +154,11 @@ appearance:
   crop_rank: TBD                    # score_area | moving_first; decided by the tuning check
   crop_moving_share: 0.5            # a detection is "moving" if motion boxes cover this share of its box (not tuned)
   crop_dup_cover: 0.5               # a motion crop this covered by chosen detection crops is a duplicate (not tuned)
+  # Frame views (rewind/embed/clip_model.py): all of tile0, tile1, pad are embedded; frame_mode picks what search
+  # uses. tiles2 = the two overlapping squares (main), pad = letterboxed whole frame (ablation at 4.4). Decided by
+  # Ashutosh (PROGRESS open-issue item 4): centre-crop loses 28 % of tuning events; if 4.4 shows no difference, pad.
+  frame_mode: tiles2                # tiles2 | pad
+  batch_size: 64                    # images per CLIP call; 16-256 run at the same speed (step 1.4)
   mean_center: true
 action:
   enabled: TBD                      # Gate 5.1

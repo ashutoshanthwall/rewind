@@ -131,17 +131,28 @@ def detections_unchanged(a: Candidate, b: Candidate, iou: float, min_score: floa
     return _covered(a, b, iou, min_score) and _covered(b, a, iou, min_score)
 
 
+class Deduper:
+    """Online keep/drop decisions for the candidates of ONE clip, offered in frame order."""
+
+    def __init__(self, cfg: DedupConfig, use_detections: bool):
+        self.cfg, self.use_detections, self.last = cfg, use_detections, None
+
+    def offer(self, c: Candidate) -> bool:
+        last, cfg = self.last, self.cfg
+        if last is not None and c.frame <= last.frame:
+            raise ValueError("candidates must be in increasing frame order")
+        keep = (last is None
+                or c.t_s - last.t_s >= cfg.max_gap_s
+                or changed_share(last, c, cfg.pixel_delta) >= cfg.pixel_thresh
+                or (self.use_detections and not detections_unchanged(last, c, cfg.det_iou, cfg.det_min_score)))
+        if keep:
+            self.last = c
+        return keep
+
+
 def keep_flags(cands: Sequence[Candidate], cfg: DedupConfig, use_detections: bool) -> list[bool]:
     """Keep/drop decision for each candidate of one clip, in frame order (rules in the module docstring)."""
     if any(b.frame <= a.frame for a, b in zip(cands, cands[1:])):
         raise ValueError("candidates must be in increasing frame order")
-    flags, last = [], None
-    for c in cands:
-        keep = (last is None
-                or c.t_s - last.t_s >= cfg.max_gap_s
-                or changed_share(last, c, cfg.pixel_delta) >= cfg.pixel_thresh
-                or (use_detections and not detections_unchanged(last, c, cfg.det_iou, cfg.det_min_score)))
-        flags.append(keep)
-        if keep:
-            last = c
-    return flags
+    d = Deduper(cfg, use_detections)
+    return [d.offer(c) for c in cands]

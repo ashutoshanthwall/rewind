@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **3 — Motion + detection: done** (3.1 ✔ · Gate 3.3 ✔ YOLOX-s · full pass ✔ 300/300 · 3.2 ✔) · next: Phase 4
+Deadline: Fri 30 Oct 2026 · Current phase: **4 — Appearance index** (autopilot) · 4.1 ✔ dedup 1.0 · 4.2 in progress
 
 ---
 
@@ -1393,6 +1393,56 @@ check (1.3). The `VERIFY` markers in `annotations.py`, `manifest.py` and `build_
 - Local `.git/hooks/pre-push` (not committed) refuses pushes while `REWIND_AUTOPILOT` is set.
 - Known stops ahead: 7.1 (`engine/` empty, 👤), Gate 6.2 if the paired rule says keep (no agreed precision/recall
   bar), 7.4 (no agreed weight objective).
+
+---
+
+## Step 4.1 — Sampling + motion-aware dedup (Mon 26 Oct, autopilot run 1)
+
+**Done**
+- `rewind/embed/dedup.py`: 1 fps candidates (on the 5 fps motion/detection grid); each is compared with the **last
+  kept** frame and dropped only if (1) the share of analysis-frame pixels (gray, 640 px wide) changed by >
+  `dedup_pixel_delta` inside the union of both frames' MOG2 boxes is below `dedup_motion_pixel_thresh`, (2) the
+  detections are essentially unchanged and (3) it is < `max_gap_s` after the last kept frame. `Deduper` (online,
+  used by the 4.2 embedding job) and `keep_flags` (list) share one rule.
+- "Essentially unchanged" = every detection with score >= `dedup_det_min_score` (0.5) in either frame has a
+  same-class box with IoU >= `dedup_det_iou` (0.5) in the other. Why a score floor (measured on tuning before the
+  sweep, consecutive 1 fps frames): exact detection sets are identical on 0-3 % of outdoor seconds (14-33 boxes per
+  frame, low-score boxes flicker), so a literal "set unchanged" would keep ~98 % of outdoor frames whatever the pixel
+  threshold. With the floor: outdoor 1-36 %, G330 90 %, G474 81 % unchanged. Floor, IoU and pixel delta (25 grey
+  levels) were fixed before the sweep and are not tuned.
+- `scripts/dedup_sweep.py`: decodes every tuning clip once at full resolution (the 4.2 path), applies the 8 swept
+  thresholds to the same candidates; `results/reports/dedup_4.1.md`; 8 experiments rows (git `bcecd4f`).
+- **Pipeline recall, fixed before the run:** share of tuning events (3,586: Kitware RGB + contrib IR, per piece) with
+  >= 1 kept frame in the event's frame span widened by `metrics.event_tolerance_s` (2 s; a hit clip carries 5 s of
+  context). Strict (no widening) reported next to it.
+- `tests/test_dedup.py`: 10 tests (mask scaling and clipping, changed share incl. the delta boundary and the region
+  union, detection rule incl. flicker and class change, max gap, comparison with the last kept frame not the
+  previous one (slow drift), threshold 0 keeps all, recall window edges).
+
+**Key numbers** (tuning, 17,436 candidates)
+
+| threshold | kept | recall ±2 s | strict | G330 kept / recall (n=23) | G474 kept / recall (n=33) |
+|---|---|---|---|---|---|
+| 0 (keep all) | 100 % | 1.000 | 0.977 | 100 % / 1.000 | 100 % / 1.000 |
+| 0.0003 | 80.9 % | 0.997 | 0.964 | 21.7 % / 0.957 | 97.4 % / 1.000 |
+| 0.003 | 72.4 % | 0.991 | 0.948 | 19.9 % / 0.826 | 71.1 % / 1.000 |
+| **1.0 (chosen)** | **62.9 %** | **0.990** | 0.941 | 19.3 % / 0.826 | 25.7 % / 0.848 |
+
+Outdoor cameras keep 67-99 % of frames at every threshold (something changes almost every second in traffic).
+
+**Decision (rule, AUTOPILOT.md 3: fewest kept frames with tuning pipeline recall >= 0.95):
+`dedup_motion_pixel_thresh: 1.0`** — written to config. Every swept value reached >= 0.99. At 1.0 the pixel test
+never keeps a frame: detection changes + the 10 s max gap decide alone (a grid value fixed before the run as the
+"detections + max gap only" setting).
+
+**Open issues (flagged, not acted on: the rule decides)**
+- **The quiet cameras pay for it:** G330 recall 0.83 (n = 23) and IR G474 0.85 (n = 33) at 1.0 vs 0.96 / 1.00 at
+  0.0003. The overall number is dominated by the busy outdoor cameras (3,530 of 3,586 events). Dev is G330-heavy
+  (72 % of dev activities), so this is the tuning → dev transfer risk pre-committed in open-issue item 7: the 4.4
+  and 8.1 reports show G330 separately. If 4.4 shows G330 dev queries missing because their frames were dropped,
+  that is a finding to report, not a reason to re-tune on dev.
+- The ±2 s recall is lenient by design (a kept frame within 2 s leads to the event through the clip's context);
+  strict recall drops 0.977 → 0.941.
 
 ---
 
