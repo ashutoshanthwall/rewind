@@ -1162,7 +1162,7 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 ---
 
-## Phase 3 full pass — launched (Sun 25 Oct, 19:15)
+## Phase 3 full pass — launched (Sun 25 Oct, 18:49)
 
 - `scripts/index_pass.py` covers steps 3.1 and 3.4 in one decode.
   - Per clip: 5 fps samples decoded once at max(motion width, detection input size); MOG2 at 640 px; YOLOX-s at the
@@ -1180,8 +1180,8 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
   - 1 RGB clip in 69.7 s (63,499 detections), 1 IR clip in 16.0 s.
   - **Projection 5.1 h** for 300 clips (< 8 h, so launched without asking, per Ashutosh's instruction).
   - The IR clip's MOG2 output is identical to the earlier 3.3 test (6,196 boxes).
-- **Running:** `nohup uv run python -m scripts.index_pass`, PID 2559045. Log `results/logs/index_pass.log`, PID file
-  `results/logs/index_pass.pid`. First ETA 5.46 h (started 19:15). It appends one experiments row at the end. Re-run
+- **Running:** `nohup uv run python -m scripts.index_pass`, PID 2559056 (python; `uv run` parent 2559052). Log `results/logs/index_pass.log`, PID file
+  `results/logs/index_pass.pid`. First ETA 5.46 h (started 18:49, expected done ~00:15). It appends one experiments row at the end. Re-run
   the same command to resume after an interruption.
 - Note: for RGB, MOG2 now gets frames decoded at 1280 and area-resized to 640 (3.1 decoded directly at 640). This is
   a small pixel-level difference; the 3.1 check numbers are not re-measured on it.
