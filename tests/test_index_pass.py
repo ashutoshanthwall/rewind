@@ -86,3 +86,25 @@ def test_process_clip_end_to_end(tmp_path):
     done = json.loads((tmp_path / "art" / "motion" / "G1" / "clip.done.json").read_text())
     assert done["settings"] == settings_hash(cfg)
     assert not list((tmp_path / "art").rglob("*.tmp"))
+
+
+def test_check_index_pass_accepts_good_output_and_flags_broken(tmp_path):
+    from scripts.check_index_pass import check_clip
+    path = tmp_path / "v.avi"
+    write_avi(path, n_frames=45, size=(64, 48))
+    v = Video(1, "clip", str(path), "G1", "rgb", datetime(2018, 3, 7, 16, 50), 45, 30.0)
+    cfg = {"motion": MOTION, "detection": {"enabled": True, "imgsz": {"rgb": 16}, "batch_size": 3,
+                                           "classes": ["person", "car"], "conf_thresh": 0.3}}
+    marker = process_clip(v, (64, 48), cfg, MotionConfig.from_config(MOTION), FakeDetector(), tmp_path / "art")
+    problems, stats = check_clip(v, (64, 48), marker, tmp_path / "art", cfg, overhang=0.03)
+    assert problems == [] and stats["detections"] == 8 and stats["n_car"] == 8
+    det_path = tmp_path / "art" / "detections" / "G1" / "clip.parquet"
+    d = pd.read_parquet(det_path)
+    d.loc[0, "t_s"] += 0.5                      # timestamp no longer frame / fps
+    d.loc[1, "x2"] = 64 + 5                     # 5 px past a 64 px frame: > 3 %
+    d.to_parquet(det_path, index=False)
+    problems, _ = check_clip(v, (64, 48), marker, tmp_path / "art", cfg, overhang=0.03)
+    assert any("t_s != frame / fps" in p for p in problems)
+    assert any("outside the 64x48 frame" in p for p in problems)
+    problems, _ = check_clip(v, (64, 48), {**marker, "settings": "x"}, tmp_path / "art", cfg, overhang=0.03)
+    assert any(p.startswith("settings x") for p in problems)

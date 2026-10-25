@@ -1188,6 +1188,29 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 
 ---
 
+## Full pass — mid-run output check (Sun 25 Oct, ~19:35)
+
+- `scripts/check_index_pass.py` (read-only, reusable for the final check), with a test in `tests/test_index_pass.py`.
+  For every finished clip it checks: files and marker present, settings hash, sample and per-second counts, the
+  activity range, frames on the 5 fps grid, `t_s = frame / fps`, boxes inside the frame, detection classes and
+  scores against config.
+- At 21/300 clips (all G330, the indoor gym): **0 problems**, no leftover `.tmp`. One detection box overhanging the
+  bottom edge by 16.7 px (a person cut by the frame) tripped my first, absolute 16 px tolerance → tolerance is now
+  3 % of the frame size.
+- Viewed by Claude (n = 4 frames):
+  - **Two empty clips are correct.** G330 03-07 16:55 and 17:25 show an empty gym: activity 0, 0 detections.
+  - **Static false positive.** G330 on 03-11: two small dark objects lying on the bleachers are detected as `car`
+    (score 0.30-0.57) on nearly every sample, 5,970 detections over 8 clips (2.8 % of G330 detections).
+- **Open issue for 4.2 / 6.1:**
+  - 4.2 crop choice should rank by size × score; these boxes are 39x22 px at low score, so they rarely reach the top
+    4 in a crowded gym frame.
+  - A UI must not present the crop class as fact.
+  - The 6.1 stop/start rules are unaffected: they need a moving track first.
+  - Also measure static repeated boxes per camera after the pass.
+- IR (G474, processed last) not checked yet; covered by the final check after the pass.
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every
