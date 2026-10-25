@@ -89,10 +89,10 @@ class YoloxDetector:
         torch = self.torch
         prepped = [self.preprocess(f) for f in frames]
         batch = torch.from_numpy(np.stack([p[0] for p in prepped])).cuda().half()
-        with torch.inference_mode():
-            raw = self.model(batch).float()
+        with torch.inference_mode():   # postprocess edits the tensor in place: must stay inside
+            results = self.postprocess(self.model(batch).float(), self.num_classes, self.conf, self.nms)
         out = []
-        for det, (_, r) in zip(self.postprocess(raw, self.num_classes, self.conf, self.nms), prepped):
+        for det, (_, r) in zip(results, prepped):
             if det is None:
                 out.append(Detections(np.zeros((0, 4), np.float32), np.zeros(0, np.float32), np.zeros(0, int)))
                 continue
