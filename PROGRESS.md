@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added · Phase 3 in progress (reordered: 3.1 test → 3.3 → combined 3.1+3.4 full pass → 3.2)**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added · Phase 3: 3.1 test ✔ · Gate 3.3 ✔ (YOLOX-s) · full pass running (results/logs/index_pass.log) · 3.2 after the run**
 
 ---
 
@@ -1060,6 +1060,131 @@ full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 
 - `min_box_area_px` not tuned; IR (352 px wide, not downscaled) uses the same pixel threshold.
 - The warm-up trains on the first 5 s including any moving object; objects in the first seconds may be partly
   absorbed (slight under-detection there).
+
+---
+
+## Step 3.3 — Detector smoke test, GATE 3.3 (Sun 25 Oct)
+
+**Done**
+- **Install (both within the timebox).**
+  - Both detectors went into throwaway venvs in the session scratchpad. They reuse the main `.venv`'s torch through
+    a `.pth` path, because the uv cache had been cleaned and a fresh torch would have been a >1 GB download.
+  - Ultralytics 8.4.188 installed with `--no-deps` plus its small non-torch deps. Its telemetry was switched off:
+    `sync: false` in `~/.config/Ultralytics/settings.json`.
+  - YOLOX 0.3.0 (PyPI sdist) had to be built against torch with `--no-build-isolation`. First attempt failed: the venv
+    was on system Python without `Python.h`; it worked once recreated on uv's managed 3.11.17.
+  - Main `pyproject.toml`/`uv.lock` unchanged.
+- **Weights** in `artifacts/weights/` (gitignored), sha256:
+  - `yolov8n.pt`: `f59b3d83…`
+  - `yolov8s.pt`: `1f47a78b…`
+  - `yolox_s.pth`: `f55ded71…` (in config). From the upstream release `0.1.1rc0`; GitHub was serving it at ~15 KB/s,
+    so the rest came via 8 parallel HTTP ranges from the same URL.
+  - Integrity of `yolox_s.pth`: size = server content-length (72,089,125 B); the 8.9 MB that overlaps with the
+    independent sequential download is byte-identical; loads with 462 tensors. VERIFY: no official checksum is
+    published.
+- **Licenses verified from the files.** Ultralytics: `LICENSE` in the wheel = **AGPL-3.0**. YOLOX: upstream
+  `LICENSE` at commit `6ddff48` = **Apache-2.0** (the PyPI sdist ships no LICENSE file).
+- `rewind/detect/detectors.py`: one interface for both backends. `class_ids` takes COCO names.
+  - YOLOX preprocessing is as upstream `ValTransform(legacy=False)`, **verified** on real frames: legacy input gives
+    recall 0, non-legacy 0.30/0.76.
+  - Fixed: YOLOX postprocess edits a tensor in place, so it must run inside `inference_mode`.
+- `scripts/detector_smoke.py` (rule 16 measurement, tuning only):
+  - All detector settings run on one shared decode; the MOG2 motion boxes are scored as the no-detector baseline.
+  - Writes JSON per setting, `results/reports/detector_3.3.md`, 50 drawn frames per setting under
+    `results/figures/detector_smoke/` (gitignored), and experiments rows.
+  - Method: recall of annotated actor boxes on the 5 fps grid, greedy one-to-one at IoU ≥ 0.5, 2,680 frames
+    (≤ 60 per tuning clip).
+  - Pre-registered before any run: overall = mean of the cells RGB person / RGB vehicle / IR.
+- `tests/test_detector_smoke.py`: 8 tests (IoU, greedy and centre matching, dedup, size buckets, spec parsing).
+
+**Key numbers** (`results/reports/detector_3.3.md`)
+
+| setting | RGB person | RGB vehicle | IR | overall (pre-reg.) | pooled | detector fps RGB | projected full pass |
+|---|---|---|---|---|---|---|---|
+| YOLOv8n 640 | 0.139 | 0.517 | 0.008 | 0.221 | 0.206 | 322 | 1.9 h |
+| YOLOv8s 640 | 0.212 | 0.601 | 0.008 | 0.274 | 0.279 | 229 | 2.0 h |
+| YOLOX-s 640 | 0.171 | 0.644 | 0.004 | 0.273 | 0.255 | 113 | 2.4 h |
+| YOLOv8n 1280 | 0.303 | 0.691 | 0.000 | 0.331 | 0.368 | 109 | 2.7 h |
+| YOLOv8s 1280 | 0.397 | 0.789 | 0.004 | 0.397 | 0.460 | 68 | 3.4 h |
+| **YOLOX-s 1280** | **0.407** | **0.830** | 0.004 | **0.414** | **0.476** | 25 | 6.1 h |
+| motion boxes (no detector) | 0.101 | 0.419 | 0.083 | 0.201 | 0.160 | – | – |
+
+- **By object size:** 62 % of RGB person boxes are < 5 % of the frame height; YOLOX-s 1280 finds 0.24 of those. Objects
+  ≥ 15 % of the frame height are found 83-97 % by every detector.
+- **IR ground truth unusable at IoU 0.5:** 231 of 242 IR boxes are CMU-v2 (loose, out of time). Viewed by Claude
+  (n = 3 IR frames): the car is detected, but inside a GT box ~4x larger.
+- **Viewed by Claude** (n = 4 RGB frames): parked cars and the annotated bus are boxed (motion crops miss parked
+  cars); the misses are tiny, distant people.
+
+**GATE 3.3 — decision: YOLOX-s, RGB 1280 px / IR 640 px (Ashutosh chose the recommended option, 25 Oct)**
+- **YOLOX vs YOLOv8: the rule decides.** YOLOv8 is never ≥ 5 points higher at the same input size:
+  - 640: +0.1 pt overall, +2.4 pt pooled;
+  - 1280: −1.7 pt overall, −1.6 pt pooled;
+  - the same holds RGB-only.
+- **The "no detector if both < 50 %" clause did not decide clearly, so Ashutosh was asked.**
+  - Below 50 %: the pre-registered mean of cells (0.414) and pooled (0.476).
+  - Above 50 %: RGB-only mean (0.618).
+  - The IR cell is ~0 for every detector because of the ground truth, not the detector.
+  - The alternative (motion crops) is worse on every RGB cell.
+  - Ashutosh kept the detector. **This is a documented deviation from the literal rule.**
+- **IR at 640 px:** upscaling 352x240 thermal frames to 1280 broke detection. Example: the same frame gave a car
+  at 0.72 at 640 and "clock 0.49" at 1280. IR IoU-0.3 recall is 0.103 at 640 vs 0.037 at 1280.
+- **No license problem:** Apache-2.0. Ultralytics (AGPL) is not a project dependency; `UltralyticsDetector` stays as an
+  optional, lazily imported backend used only for this comparison.
+- **YOLOX vendored**, not added as a package:
+  - Why: the sdist compiles a C++ op against torch at build time and pins onnx 1.8.1 (no Python 3.11 wheel).
+  - What: `rewind/detect/yolox_vendor/` holds the 8 inference modules copied verbatim. Only the `yolo_head.py`
+    imports were changed (loguru → logging; relative imports). Includes `LICENSE` and `NOTICE.md`.
+  - Check: outputs are **bit-identical** to the pip package (max abs diff 0.0 on a random batch).
+  - **No new pip dependency.**
+- **Config:**
+  - `detection` filled: enabled, backend yolox, model yolox-s, weights path/url/sha256, license, imgsz
+    `{rgb: 1280, ir: 640}`, `nms_iou: 0.65`, `batch_size: 16`.
+  - New section `detection_check`.
+  - `appearance.crop_source` stays `detection_then_motion`.
+
+**Self-review (PROMPT R) — problems found and fixed**
+1. `sampled_frames` crashed while building its own error message when given a `str` path → `Path(path)`.
+2. YOLOX postprocess ran outside `inference_mode` → moved inside.
+3. Scratch venvs were first created on system Python (different base than `.venv`) → recreated on managed 3.11.17.
+
+**Known limitations of the 3.3 evidence (recorded, not fixed)**
+- The 4 Ultralytics experiments rows carry git `e3ddc97-dirty`: the process loaded code from `79aee4c` at start;
+  later uncommitted edits (motion baseline) did not affect the running process.
+- The smoke test's projections use CPU decode time at the shared 1280 decode width, so the 640 rows overstate
+  CPU time.
+
+**Open issues**
+- Precision cannot be measured (MEVA only boxes actors of annotated activities). IR detection quality is
+  unmeasured beyond eyeballing.
+- Reproducing the YOLOv8 rows needs Ultralytics installed by hand (scratch venv recipe above). The YOLOX rows
+  reproduce in the main env.
+
+---
+
+## Phase 3 full pass — launched (Sun 25 Oct, 19:15)
+
+- `scripts/index_pass.py` covers steps 3.1 and 3.4 in one decode.
+  - Per clip: 5 fps samples decoded once at max(motion width, detection input size); MOG2 at 640 px; YOLOX-s at the
+    modality's input size; a decode thread overlaps CPU decoding with GPU detection.
+  - Outputs: `artifacts/motion/<camera>/<clip>.{seconds,boxes}.parquet` and
+    `artifacts/detections/<camera>/<clip>.parquet` (original-pixel boxes, `t_s = frame / fps`), plus a
+    `.done.json` marker written last.
+  - Resumable. It refuses to mix settings (settings hash of config `motion` + `detection`) and stops on any error.
+- `tests/test_index_pass.py`: 4 tests:
+  - prefetch order and error propagation;
+  - settings hash;
+  - detector config refusals (TBD, missing imgsz, wrong weights hash);
+  - one clip end to end with a fake detector (box scale-back, timestamps, markers).
+- Short test (scratch output):
+  - 1 RGB clip in 69.7 s (63,499 detections), 1 IR clip in 16.0 s.
+  - **Projection 5.1 h** for 300 clips (< 8 h, so launched without asking, per Ashutosh's instruction).
+  - The IR clip's MOG2 output is identical to the earlier 3.3 test (6,196 boxes).
+- **Running:** `nohup uv run python -m scripts.index_pass`, PID 2559045. Log `results/logs/index_pass.log`, PID file
+  `results/logs/index_pass.pid`. First ETA 5.46 h (started 19:15). It appends one experiments row at the end. Re-run
+  the same command to resume after an interruption.
+- Note: for RGB, MOG2 now gets frames decoded at 1280 and area-resized to 640 (3.1 decoded directly at 640). This is
+  a small pixel-level difference; the 3.1 check numbers are not re-measured on it.
 
 ---
 
