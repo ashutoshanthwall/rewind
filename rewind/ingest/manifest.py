@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS videos (
     codec         TEXT    NOT NULL,
     ingested_at   TEXT    NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS proxies (
+    video_id      INTEGER PRIMARY KEY REFERENCES videos(video_id),
+    path          TEXT    NOT NULL UNIQUE,   -- relative to the repo root
+    n_frames      INTEGER NOT NULL,          -- equal to videos.n_frames (checked); frame i is at i / fps
+    fps           REAL    NOT NULL,
+    duration_s    REAL    NOT NULL,
+    width         INTEGER NOT NULL,
+    height        INTEGER NOT NULL,
+    size_bytes    INTEGER NOT NULL,
+    align_corr    TEXT    NOT NULL,          -- JSON {shift: difference-image correlation} (alignment check)
+    settings      TEXT    NOT NULL,          -- JSON of the proxy config used
+    created_at    TEXT    NOT NULL
+) STRICT;
 """
 
 

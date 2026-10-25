@@ -8,6 +8,22 @@ ingest:
   # (15 names say 299 s for 300.0-300.33 s of video). Observed on the 300 files: -0.77 .. +1.33 s.
   # Errors worth catching (truncated file, wrong fps, wrong file) are tens of seconds.
   max_name_duration_diff_s: 2.0
+proxy:
+  # step 1.2: browser playback copies (H.264 MP4, +faststart). Never used for indexing.
+  max_height: 720              # RGB 1920x1080 -> 1280x720; smaller videos (IR 352x240) are not upscaled
+  codec: libx264               # chosen over h264_nvenc: 35 MB vs 88 MB per 5-min clip at similar speed
+  crf: 23
+  preset: veryfast
+  keyint_frames: 250           # x264 default. G340 test clip: 35.3 MB vs 64.5 MB at 60; decoding a full 250-frame
+                               # GOP at 720p (worst-case seek) takes 0.10 s vs 0.07 s
+  max_duration_diff_s: 1.0     # Done-when of step 1.2: proxy duration within 1 s of the original
+  align_check_frames: 900      # per file: first N decoded frames of proxy and original are compared. Was 300 for
+                               # the first full run (299 clips passed; value kept in each row's settings). Raised
+                               # because 2018-03-11.17-20-00 G474 opens with 10 s of near-static thermal video:
+                               # shift 0 vs +1 tied at 300 frames (0.1536 vs 0.1539), while shift 0 wins over
+                               # 900 frames and over the whole clip (0.235 vs 0.184). Cost: 3.1 s -> 9.2 s per RGB clip
+  align_check_width: 320       # as grayscale at this width
+  align_max_offset: 3          # frame shifts tried; frame-difference correlation must peak at shift 0
 sampling:
   appearance_fps: 1
   max_gap_s: 10

@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1 done); next: 1.2 — Playback proxies**
+Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1, 1.2 done); next: 1.3 — Annotated events table**
 
 ---
 
@@ -289,3 +289,83 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest (1.1 done); next: 1.2
   `ffplay data/raw/2018-03-11.13-50-00.13-54-59.school.G330.r13.avi`
 - Read `rewind/ingest/manifest.py`, especially the frame index rule and `FRAME_SNAP_DECIMALS`. Be able to explain why `frame.pts` can't be trusted here and why the snap is needed (datetime stores 1/30 s as 33,333 µs).
 - Open `results/reports/manifest_1.1.md` and check the totals above.
+
+---
+
+## Step 1.2 — Playback proxies (Sun 25 Oct)
+
+**Done**
+- `scripts/make_proxies.py`: ffmpeg → H.264 MP4, at most 720p (`scale=-2:'min(720,ih)'`, IR 352x240 not upscaled),
+  `-movflags +faststart`, no audio. Frame-exact: `setpts=N/(fps*TB)` + `-fps_mode passthrough`, so proxy frame i is
+  original frame i (decoded order, see the 1.1 frame index rule) and is shown at exactly i / fps.
+  Each proxy is written as `.mp4.part` and renamed only after all checks pass:
+  - same frame count (header and packet count) and fps as the original; duration within `proxy.max_duration_diff_s`;
+  - every frame's presentation time is exactly i / fps of the original (sorted packet pts, exact fractions);
+  - content alignment: over the first `proxy.align_check_frames` frames, frame-difference images of proxy and
+    original (grayscale, 320 px wide) must correlate best at shift 0 among shifts −3..+3.
+  Then a row goes into a new `proxies` table (path, frames, fps, duration, size, alignment correlations, full
+  settings JSON). Resumable; a finished `.mp4` without a row is refused, not adopted (its settings are unknown).
+  A failing clip is logged, gets no row, the run continues and exits 1 with the list; a re-run retries only those.
+  Disk/config/DB problems stop the run at once. Log: `data/proxy/make_proxies.log`.
+- `tests/test_proxies.py`: 13 tests. Hand-computed two-pixel correlation case; identical/static/shifted sequences;
+  `make_one` on a generated moving-square AVI (frame count, no upscaling, record + changed-size detection);
+  1920x1080 → 1280x720; a proxy that lost frame 0 but kept the count is rejected; a proxy with a 1-frame
+  timestamp gap is rejected; decoded proxy times are exactly i/30; wrong frame count, unrecorded leftover proxy and
+  non-integer fps are refused.
+- Full run by Ashutosh in their own terminal: 299/300 on the first pass, 1 failed the alignment check (below);
+  retried after raising `align_check_frames`: 300/300.
+- Independent check of all 300 rows after the run: frame counts and fps equal the originals 300/300; max
+  |duration difference| 0.00065 s; `moov` before `mdat` (faststart) 300/300; files present with recorded size
+  300/300; no `.part` left; sorted packet pts == i/fps exactly 300/300 (also re-run through the final
+  `probe_proxy`); best alignment shift = 0 in 300/300.
+- 👤 Ashutosh opened the G340 proxy (03-07 10:55) and the retried G474 proxy (03-11 17:20) in Firefox: both play,
+  seek fine, right views.
+- PROMPT R found and fixed:
+  1. Nothing checked that proxy frame i is *shown* at i / fps (only counts and total duration). Added the pts check
+     to `probe_proxy` against the original's fps from the manifest. A first version compared against the
+     container's `average_rate`, which is computed from the duration and shifts with a gap; the new test caught it.
+  2. Integer fps was a comment only; `ffmpeg_command` now refuses a non-integer rate (`fps:g` would round it).
+
+**Key numbers**
+- **300 proxies, 8.60 GB** (RGB 249 clips 8.50 GB, avg 34.1 MB per 5 min; IR 51 clips 0.10 GB, avg 2.0 MB).
+  Per camera: G330 1.75, G336 2.00, G340 1.05, G424 1.31, G436 2.40, G474 0.10 GB.
+- Run time: 10:19:06 → 12:05:44 = **1 h 47 min for 25.0 h of video** (~14× realtime; pre-run estimate 1.75 h).
+  ~22–25 s per RGB clip, ~3.5 s per IR clip.
+- Alignment margin (corr at shift 0 minus best other shift): median 0.274, min 0.015, 19 of 300 below 0.05
+  (mostly G474 and quiet G340/G330 openings).
+- Disk: 83 GB free on `/` after the run.
+- Tests: **136/136 pass**.
+
+**Decisions**
+- **libx264 veryfast CRF 23, not h264_nvenc:** 35 MB vs 88 MB per 5-min clip at similar speed (20.6 s vs 14 s per
+  test clip). **keyint 250** (x264 default): G340 35.3 MB vs 64.5 MB at keyint 60; decoding a whole 250-frame GOP at
+  720p (worst-case seek) takes 0.10 s vs 0.07 s. Browser check confirmed seeking is fine.
+- **Alignment check by frame-difference correlation, not per-frame error.** In near-static CCTV the per-frame
+  error is dominated by compression noise (G340: mean abs diff 0.982 at shift 0 vs 0.978 at +1); motion between
+  frames pins the shift (0.55 vs 0.30).
+- **`proxy.align_check_frames` 300 → 900 after the run.** `2018-03-11.17-20-00 G474` opens with ~10 s of nearly
+  static thermal video (mean frame change 0.04 grey levels): shift 0 vs +1 tied at 300 frames (0.1536 vs 0.1539).
+  Over 900 frames shift 0 wins (0.163 vs 0.139), over the whole clip clearly (0.235 vs 0.184), and in every
+  300-frame window after the first. Same frame count and pts. So: not enough evidence, not a bad proxy. 900 frames
+  costs 9.2 s per RGB clip vs 3.1 s (3000 would cost 32 s). The other 299 rows keep `align_check_frames: 300` in
+  their settings JSON; they all passed at 300.
+- **Separate `proxies` table** (one row per video) rather than columns on `videos`: keeps the evidence manifest
+  unchanged and stores how each proxy was made and checked.
+- New config section `proxy:` (codec, crf, preset, keyint, max height, duration tolerance, alignment-check
+  parameters). `--min-free-gb` (default 10) stays a command-line safety option: it never changes the output.
+- Cleanup approved by Ashutosh before the full run: dropped a stale `proxies` table from a test run (1 row, old
+  `align_mad` column) and deleted 4 test proxies + log made with different settings.
+- **Not an experiment:** no row in `experiments.csv`.
+
+**Open issues / limitations**
+- The alignment check covers only each clip's first 30 s (10 s for the 299 first-pass rows) and is weak on quiet
+  thermal clips (min margin 0.015). The strong guarantees for the whole clip are the frame count and exact pts;
+  together they rule out dropped/duplicated frames that change the count or timing, but not a content swap in
+  the middle with the count preserved (no known ffmpeg path does that with passthrough).
+- Proxy playback time t ↔ original frame `floor(t × 30)` holds by construction; browsers report `currentTime` with
+  their own rounding, so the UI (step 9.1) must map times with the same snap as `seconds_to_frame`.
+
+**Verify by hand**
+- Done: browser play + seek on G340 and G474 proxies.
+- Optional: read `scripts/make_proxies.py` `ffmpeg_command` and be able to explain `setpts=N/(fps*TB)` and
+  `-fps_mode passthrough`, and why the alignment check uses difference images.
