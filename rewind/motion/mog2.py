@@ -15,7 +15,7 @@ warmup_s seconds of samples are fed once to train the model, then the clip is pr
 trained model. Each clip starts a fresh model (clips are independent units; resuming needs no model state).
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 import cv2
@@ -95,28 +95,36 @@ class MotionScorer:
         return out
 
 
+def warmed(samples: Iterable[tuple[int, np.ndarray]], scorer: MotionScorer,
+           size: tuple[int, int] | None = None) -> Iterator[tuple[int, np.ndarray]]:
+    """Yield the clip's samples (index, frame) unchanged, after training `scorer` on the first warmup_s of them.
+
+    Samples are buffered only for the warm-up window (warmup_s * motion fps frames: a few MB). If `size` is given,
+    the frames fed to the warm-up are first scaled to it (the analysis size)."""
+    n_warm = max(1, round(scorer.cfg.warmup_s * scorer.cfg.fps))
+    buffer = []
+    it = iter(samples)
+    for item in it:
+        buffer.append(item)
+        if len(buffer) == n_warm:
+            break
+    scorer.warm_up(to_size(f, size) for _, f in buffer)
+    yield from buffer
+    yield from it
+
+
+def to_size(frame: np.ndarray, size: tuple[int, int] | None) -> np.ndarray:
+    """Frame scaled to size (w, h) with area interpolation; unchanged if size is None or already equal."""
+    if size is None or (frame.shape[1], frame.shape[0]) == tuple(size):
+        return frame
+    return cv2.resize(frame, tuple(size), interpolation=cv2.INTER_AREA)
+
+
 def score_clip(samples: Iterable[tuple[int, np.ndarray]], cfg: MotionConfig,
                orig_size: tuple[int, int]) -> list[FrameMotion]:
-    """MOG2 over one clip's samples (index, BGR frame at analysis size), with the warm-up described above.
-
-    Samples are buffered only for the warm-up window (warmup_s * motion fps frames at 640 px: a few MB)."""
+    """MOG2 over one clip's samples (index, BGR frame at analysis size), with the warm-up described above."""
     scorer = MotionScorer(cfg, orig_size)
-    n_warm = max(1, round(cfg.warmup_s * cfg.fps))
-    buffer, out = [], []
-    for index, frame in samples:
-        if buffer is not None:
-            buffer.append((index, frame))
-            if len(buffer) < n_warm:
-                continue
-            scorer.warm_up(f for _, f in buffer)
-            out.extend(scorer.score(i, f) for i, f in buffer)
-            buffer = None
-            continue
-        out.append(scorer.score(index, frame))
-    if buffer:  # clip shorter than the warm-up window
-        scorer.warm_up(f for _, f in buffer)
-        out.extend(scorer.score(i, f) for i, f in buffer)
-    return out
+    return [scorer.score(i, f) for i, f in warmed(samples, scorer)]
 
 
 def per_second(frames: list[FrameMotion], video_fps: float, n_frames: int) -> np.ndarray:

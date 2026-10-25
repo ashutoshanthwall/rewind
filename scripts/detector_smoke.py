@@ -43,11 +43,11 @@ import cv2
 import numpy as np
 import yaml
 
-from rewind.detect.detectors import COCO_NAMES, class_ids, make_detector
+from rewind.detect.detectors import COCO_NAMES, Detections, class_ids, make_detector
 from rewind.eval.splits import split_video_ids
 from rewind.experiment_log import log_experiment
 from rewind.ingest.manifest import connect, load_videos
-from rewind.motion.mog2 import MotionConfig, MotionScorer
+from rewind.motion.mog2 import MotionConfig, MotionScorer, to_size, warmed
 from rewind.paths import REPO_ROOT, display_path
 from rewind.video import keep_step, sampled_frames, scaled_size
 
@@ -155,13 +155,17 @@ def draw(frame: np.ndarray, gt: dict, det, scale: float) -> np.ndarray:
     for b, s, c in zip(det.boxes, det.scores, det.classes):
         p1, p2 = (int(b[0]), int(b[1])), (int(b[2]), int(b[3]))
         cv2.rectangle(img, p1, p2, (0, 0, 255), 1)
-        cv2.putText(img, f"{COCO_NAMES[c]} {s:.2f}", (p1[0], max(10, p1[1] - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
+        cv2.putText(img, f"{COCO_NAMES[c]} {s:.2f}" if c >= 0 else "motion", (p1[0], max(10, p1[1] - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.35,
                     (0, 0, 255), 1)
     return img
 
 
 def parse_spec(spec: str) -> dict:
-    """'name=backend:weights:imgsz[:yolox_exp]', e.g. 'yolov8s_640=ultralytics:artifacts/weights/yolov8s.pt:640'."""
+    """'name=backend:weights:imgsz[:yolox_exp]', e.g. 'yolov8s_640=ultralytics:artifacts/weights/yolov8s.pt:640'.
+    The special spec 'motion' scores the MOG2 motion boxes as a class-agnostic detector (the no-detector baseline:
+    motion crops); it needs no model."""
+    if spec == "motion":
+        return {"name": "motion_boxes", "backend": "motion", "weights": None, "imgsz": None, "yolox_exp": None}
     name, rest = spec.split("=", 1)
     parts = rest.split(":")
     if len(parts) not in (3, 4):
@@ -181,9 +185,9 @@ def run(args, cfg) -> None:
         d = {**spec, "found": {iou: defaultdict(lambda: [0, 0]) for iou in ccfg["report_ious"]},
              "time": defaultdict(float), "frames": defaultdict(int), "warm": True,
              "fig_dir": REPO_ROOT / "results" / "figures" / "detector_smoke" / spec["name"],
-             "model": make_detector(spec["backend"], str(REPO_ROOT / spec["weights"]), spec["imgsz"],
-                                    dcfg["conf_thresh"], dcfg["nms_iou"], dcfg["classes"], spec["yolox_exp"],
-                                    args.legacy)}
+             "model": None if spec["backend"] == "motion" else
+             make_detector(spec["backend"], str(REPO_ROOT / spec["weights"]), spec["imgsz"], dcfg["conf_thresh"],
+                           dcfg["nms_iou"], dcfg["classes"], spec["yolox_exp"], args.legacy)}
         d["fig_dir"].mkdir(parents=True, exist_ok=True)
         dets.append(d)
 
@@ -209,51 +213,59 @@ def run(args, cfg) -> None:
 
     timing, video_s = defaultdict(float), defaultdict(float)
     size_of = {r["video_id"]: (r["width"], r["height"]) for r in conn.execute("SELECT video_id, width, height FROM videos")}
-    decode_width = max([mcfg.downscale_width] + [d["imgsz"] for d in dets])   # decode once at the largest size
+    decode_width = max([mcfg.downscale_width] + [d["imgsz"] for d in dets if d["imgsz"]])   # decode once, largest size
     for n_clip, v in enumerate(videos, 1):
         if v.video_id not in picked:
             continue
         w, h = size_of[v.video_id]
         decoded_size = scaled_size(w, h, decode_width)
         motion_size = scaled_size(w, h, mcfg.downscale_width)
-        scorer, keep = MotionScorer(mcfg, (w, h)), []
+        scorer, keep, motion_boxes = MotionScorer(mcfg, (w, h)), [], {}
         t = time.perf_counter()
-        frames_iter = sampled_frames(REPO_ROOT / v.path, v.n_frames, step, decode_width)
+        frames_iter = warmed(sampled_frames(REPO_ROOT / v.path, v.n_frames, step, decode_width), scorer, motion_size)
         while True:
             t0 = time.perf_counter()
-            item = next(frames_iter, None)
+            item = next(frames_iter, None)   # (the first call also runs the MOG2 warm-up: counted as decode)
             timing[f"decode_{v.modality}"] += time.perf_counter() - t0
             if item is None:
                 break
             i, frame = item
             t0 = time.perf_counter()
-            # MOG2 for timing only (warm-up order does not change the cost)
-            scorer.score(i, frame if decoded_size == motion_size else
-                         cv2.resize(frame, motion_size, interpolation=cv2.INTER_AREA))
+            fm = scorer.score(i, to_size(frame, motion_size))
             timing[f"mog2_{v.modality}"] += time.perf_counter() - t0
             if i in picked[v.video_id]:
                 keep.append((i, frame))
+                motion_boxes[i] = np.array(fm.boxes, np.float32).reshape(-1, 4)   # original pixels
         video_s[v.modality] += v.n_frames / v.fps
         for d in dets:
-            size = scaled_size(w, h, d["imgsz"])
+            if d["backend"] == "motion":
+                size, frames = decoded_size, keep
+            else:
+                size = scaled_size(w, h, d["imgsz"])
+                frames = [(i, to_size(f, size)) for i, f in keep]
             scale = w / size[0]
-            frames = [(i, f if size == decoded_size else cv2.resize(f, size, interpolation=cv2.INTER_AREA))
-                      for i, f in keep]
             for b in range(0, len(frames), dcfg["batch_size"]):
                 batch = frames[b:b + dcfg["batch_size"]]
-                t0 = time.perf_counter()
-                out = d["model"]([f for _, f in batch])
-                dt = time.perf_counter() - t0
-                if d["warm"]:
-                    d["warm"] = False      # first batch: CUDA/cudnn warm-up, not timed
+                if d["backend"] == "motion":   # boxes already in original pixels, class-agnostic
+                    out = [Detections(motion_boxes[i] / scale, np.ones(len(motion_boxes[i]), np.float32),
+                                      np.full(len(motion_boxes[i]), -1)) for i, _ in batch]
                 else:
-                    d["time"][v.modality] += dt
-                    d["frames"][v.modality] += len(batch)
+                    t0 = time.perf_counter()
+                    out = d["model"]([f for _, f in batch])
+                    dt = time.perf_counter() - t0
+                    if d["warm"]:
+                        d["warm"] = False      # first batch: CUDA/cudnn warm-up, not timed
+                    else:
+                        d["time"][v.modality] += dt
+                        d["frames"][v.modality] += len(batch)
                 for (i, frame), det in zip(batch, out):
                     det_boxes = det.boxes * scale
-                    groups = {"person": det_boxes[det.classes == person_id],
-                              "vehicle": det_boxes[np.isin(det.classes, list(vehicle_ids))],
-                              "any": det_boxes[np.isin(det.classes, list(vehicle_ids | {person_id}))]}
+                    if d["backend"] == "motion":
+                        groups = {"person": det_boxes, "vehicle": det_boxes, "any": det_boxes}
+                    else:
+                        groups = {"person": det_boxes[det.classes == person_id],
+                                  "vehicle": det_boxes[np.isin(det.classes, list(vehicle_ids))],
+                                  "any": det_boxes[np.isin(det.classes, list(vehicle_ids | {person_id}))]}
                     drawn = {}
                     for kind, items in gt[v.video_id][i].items():
                         g, tags = dedup_tagged(items, w, h, ccfg["gt_dup_iou"])
@@ -287,7 +299,7 @@ def run(args, cfg) -> None:
         # width; with a single detector the decode happens at max(motion width, its imgsz) (VERIFY: same as here
         # only when that equals decode_width).
         proj = {}
-        for m in ("rgb", "ir"):
+        for m in ("rgb", "ir") if d["backend"] != "motion" else ():
             cpu_per_video_s = (timing[f"decode_{m}"] + timing[f"mog2_{m}"]) / video_s[m]
             det_fps = d["frames"][m] / d["time"][m]
             n = total_s[m] * dcfg["fps"]
@@ -299,15 +311,16 @@ def run(args, cfg) -> None:
                   "overall_mean_of_cells": float(np.mean(list(cells.values()))), "pooled": pooled,
                   "counts": {str(k): dict(c) for k, c in d["found"].items()},
                   "n_frames": sum(map(len, picked.values())), "projection": proj,
-                  "projected_total_h": sum(p["cpu_h"] + p["detect_h"] for p in proj.values())}
+                  "projected_total_h": sum(p["cpu_h"] + p["detect_h"] for p in proj.values()) if proj else None}
         out = REPORTS / f"detector_smoke_{d['name']}.json"
         out.write_text(json.dumps(result, indent=1))
         print(d["name"], json.dumps({k: result[k] for k in ("cells", "overall_mean_of_cells", "pooled",
                                                             "projected_total_h")}), flush=True)
         if not args.no_log:
             metrics = {**{f"recall_{c}": r for c, r in cells.items()}, "recall_overall": result["overall_mean_of_cells"],
-                       "recall_pooled": pooled, "detect_fps_rgb": proj["rgb"]["detect_fps"],
-                       "projected_total_h": result["projected_total_h"]}
+                       "recall_pooled": pooled}
+            if proj:
+                metrics.update(detect_fps_rgb=proj["rgb"]["detect_fps"], projected_total_h=result["projected_total_h"])
             log_experiment("tuning", metrics, f"step 3.3 detector smoke {d['name']} ({d['backend']}, {d['weights']}, "
                                               f"imgsz {d['imgsz']})")
         print(f"wrote {display_path(out)} and {len(image_ids)} images in {display_path(d['fig_dir'])}")
@@ -327,8 +340,9 @@ def report(names: list[str], cfg: dict) -> None:
         ir03, irc = r["counts"]["0.3"]["ir_any"], r["counts"]["centre"]["ir_any"]
         lines.append(f"| {r['name']} | {r['n_frames']} | {c['rgb_person']:.3f} | {c['rgb_vehicle']:.3f} | "
                      f"{c['ir_any']:.3f} | **{r['overall_mean_of_cells']:.3f}** | {r['pooled']:.3f} | "
-                     f"{ir03[0] / ir03[1]:.3f} | {irc[0] / irc[1]:.3f} | {r['projection']['rgb']['detect_fps']:.0f} / "
-                     f"{r['projection']['ir']['detect_fps']:.0f} | {r['projected_total_h']:.1f} h |")
+                     f"{ir03[0] / ir03[1]:.3f} | {irc[0] / irc[1]:.3f} | " +
+                     (f"{r['projection']['rgb']['detect_fps']:.0f} / {r['projection']['ir']['detect_fps']:.0f} | "
+                      f"{r['projected_total_h']:.1f} h |" if r["projection"] else "– | – |"))
     lines += ["", "Box counts (found / total) per cell, size bucket (box height / frame height) and camera:", ""]
     keys = sorted({k for r in res for k in r["counts"][iou]})
     lines += ["| key | " + " | ".join(r["name"] for r in res) + " |", "|---|" + "---|" * len(res)]
@@ -338,10 +352,11 @@ def report(names: list[str], cfg: dict) -> None:
             f, n = r["counts"][iou].get(k, [0, 0])
             vals.append(f"{f / n:.3f} ({f}/{n})" if n else "–")
         lines.append(f"| {k} | " + " | ".join(vals) + " |")
+    res_proj = [r for r in res if r["projection"]]
     lines += ["", "Projection (whole selection): " + "; ".join(
         f"{r['name']}: RGB decode+MOG2 {r['projection']['rgb']['cpu_h']:.2f} h + detect "
         f"{r['projection']['rgb']['detect_h']:.2f} h, IR {r['projection']['ir']['cpu_h']:.2f} h + "
-        f"{r['projection']['ir']['detect_h']:.2f} h" for r in res) + ". One process, stages run one after the "
+        f"{r['projection']['ir']['detect_h']:.2f} h" for r in res_proj) + ". One process, stages run one after the "
         "other (no overlap of CPU decode and GPU detection), so this is an upper bound for that design.", ""]
     out = REPORTS / "detector_3.3.md"
     out.write_text("\n".join(lines))
