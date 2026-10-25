@@ -86,13 +86,23 @@ def _clip(vid: int, hits: list, duration: float, cfg: SearchConfig) -> Clip:
                 float(np.mean(top)), list(hits))
 
 
-def mean_center(vectors: np.ndarray, groups: np.ndarray) -> np.ndarray:
-    """Step 4.3: subtract each group's (camera's) mean vector, then L2-normalise again. No labels used."""
+def camera_means(vectors: np.ndarray, groups: np.ndarray) -> dict:
+    """Mean vector (float32) of each group (camera)."""
     x = vectors.astype(np.float32)
+    return {g: x[groups == g].mean(axis=0) for g in np.unique(groups)}
+
+
+def mean_center(vectors: np.ndarray, groups: np.ndarray, means: dict | None = None) -> np.ndarray:
+    """Step 4.3: subtract each group's (camera's) mean vector, then L2-normalise again. No labels used.
+    means: precomputed per-group means (e.g. over all footage); default: the means of these vectors."""
+    x = vectors.astype(np.float32)
+    means = camera_means(x, groups) if means is None else means
     out = np.empty_like(x)
     for g in np.unique(groups):
+        if g not in means:
+            raise ValueError(f"no mean for group {g!r}")
         m = groups == g
-        out[m] = x[m] - x[m].mean(axis=0)
+        out[m] = x[m] - means[g]
     norms = np.linalg.norm(out, axis=1, keepdims=True)
     if (norms == 0).any():
         raise ValueError("a vector equals its camera mean: cannot normalise after centering")

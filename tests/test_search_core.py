@@ -66,3 +66,11 @@ def test_mean_center_per_group():
     assert out[2] == pytest.approx([0, -1]) and out[3] == pytest.approx([0, 1])
     with pytest.raises(ValueError, match="camera mean"):
         mean_center(np.array([[1.0, 0.0]]), np.array(["A"]))
+
+
+def test_mean_center_with_given_means():
+    # means from all footage, applied to a subset: (1, 0) - (0, 0.5) = (1, -0.5) -> / sqrt(1.25)
+    out = mean_center(np.array([[1.0, 0.0]]), np.array(["A"]), {"A": np.array([0.0, 0.5])})
+    assert out[0] == pytest.approx([1 / 1.25 ** 0.5, -0.5 / 1.25 ** 0.5])
+    with pytest.raises(ValueError, match="no mean"):
+        mean_center(np.array([[1.0, 0.0]]), np.array(["B"]), {"A": np.array([0.0, 0.5])})
