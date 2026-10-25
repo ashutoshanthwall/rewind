@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added; next: Phase 3 — 3.1 MOG2 motion pass**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added · Phase 3 in progress (reordered: 3.1 test → 3.3 → combined 3.1+3.4 full pass → 3.2)**
 
 ---
 
@@ -1004,6 +1004,62 @@ amends them. No pipeline code, config or data changed.
 **Housekeeping**
 - `results/logs/` added to `.gitignore`: logs and PID files are run-time state and aren't committed. Key numbers
   from them go into this file and `results/reports/`.
+
+---
+
+## Phase 3 order (Sun 25 Oct) — reordered by Ashutosh
+
+To decode the footage only once: **3.1 as a 10-minute test → 3.3 detector smoke test + Gate 3.3 → one combined
+full pass (MOG2 + chosen detector on the same 5 fps frames = outputs of 3.1 and 3.4) launched in the background →
+3.2 motion baseline after the run.** Runs under rule 16 (measured checks, Claude decides rule-clear gates).
+
+---
+
+## Step 3.1 — MOG2 motion pass, 10-minute test (Sun 25 Oct)
+
+**Done**
+- `rewind/video.py`: `sampled_frames` (sequential PyAV decode, AUTO threading, every k-th frame from 0 as BGR,
+  scaled down to a max width, frame count checked against the manifest at the end), `keep_step`, `scaled_size`.
+  `scripts/throughput.py` now imports `keep_step` from here (was a duplicate).
+- `rewind/motion/mog2.py`: per sample: grayscale MOG2 mask (shadows = not foreground) → opening → activity =
+  foreground fraction; motion boxes = connected components of the dilated mask with area ≥ `min_box_area_px`,
+  scaled back to original pixels. Per-second activity = mean of the second's samples. Warm-up: the first `warmup_s`
+  of samples train a fresh model per clip, then the clip runs from frame 0 (no first-frame burst). `MotionConfig`
+  refuses missing/TBD keys.
+- `configs/config.yaml` `motion`: OpenCV defaults (history 500 samples = 100 s, varThreshold 16, shadows detected),
+  warm-up 5 s, open 3 px, merge-dilate 9 px, **`min_box_area_px: 100`** (was TBD; a smoke value at 640 px wide, not
+  tuned). New section `motion_check` (seed 31, 20 random windows per event).
+- `scripts/check_motion.py`: the measured replacement for the eyeball check (rule 16), tuning only. Writes
+  `results/reports/motion_3.1_<camera>.md`, `results/figures/motion_3.1_<camera>.png`, one experiments.csv row.
+- `tests/test_motion.py`: 14 tests (static scene → no activity/boxes incl. no warm-up burst; moving square found
+  and boxed; scale-back to 1920x1080 hand-computed; small-blob filter; per-second mean incl. short last second;
+  TBD refusal; sampling grid + frame-count check; AUC, box coverage, event seconds hand-computed).
+
+**Key numbers** (10 min each, tuning, 2018-03-07 16:50, Kitware events; experiments.csv rows at git `d394f25`)
+
+| camera | events | seconds inside ≥1 event | whole-frame activity AUC, event vs random window | local box-coverage AUC (all / vehicle / other) | median box coverage event vs random |
+|---|---|---|---|---|---|
+| G436 | 274 | 99 % | 0.552 | **0.869** / 0.932 / 0.823 | 0.60 vs 0.00 |
+| G340 | 104 | 70 % | 0.553 (per second, covered vs not: 0.597) | **0.809** / 0.848 / 0.759 | 0.36 vs 0.00 |
+
+- Local measure: annotated actor boxes at the 5 fps samples, fraction covered by the best motion box; null = the
+  same boxes moved to 20 random non-overlapping times in the same clip ("same place, other time").
+- Decode + MOG2: 30 s per 10 min of 1080p video (**20× realtime**, one process).
+- Plots viewed by Claude (n = 2): activity peaks line up with vehicle passes (G340: bus at 0:45, 5:20, 6:10);
+  person-only events late in the G340 window give little whole-frame activity.
+
+**Interpretation / decisions**
+- MOG2 finds motion where labelled actors are (local AUC 0.81-0.87). Numbers look right; no stop.
+- The **whole-frame activity score barely separates events from random windows** (AUC 0.55) on these cameras,
+  because labelled events cover 70-99 % of the time and vehicles dominate whole-frame motion. Consequence: the
+  motion-ranked baseline (3.2) will be weak on busy scenes — that is the realistic picture of motion search, not a
+  bug. For 4.1 dedup, use motion *inside regions* (as CLAUDE.md already specifies), not whole-frame activity.
+- One MOG2 model per clip (no state across clips): resumable per clip; costs a 5 s warm-up per 5-min clip.
+
+**Open issues**
+- `min_box_area_px` not tuned; IR (352 px wide, not downscaled) uses the same pixel threshold.
+- The warm-up trains on the first 5 s including any moving object; objects in the first seconds may be partly
+  absorbed (slight under-detection there).
 
 ---
 
