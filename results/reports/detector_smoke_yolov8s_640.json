@@ -1,0 +1,351 @@
+{
+ "name": "yolov8s_640",
+ "backend": "ultralytics",
+ "weights": "artifacts/weights/yolov8s.pt",
+ "imgsz": 640,
+ "yolox_exp": null,
+ "legacy": false,
+ "decode_width": 1280,
+ "detection_cfg": {
+  "enabled": "TBD",
+  "model": "TBD",
+  "license": "TBD",
+  "fps": 5,
+  "imgsz": 640,
+  "conf_thresh": 0.3,
+  "nms_iou": 0.65,
+  "batch_size": 16,
+  "classes": [
+   "person",
+   "car",
+   "truck",
+   "bus",
+   "motorcycle",
+   "bicycle"
+  ]
+ },
+ "check_cfg": {
+  "seed": 33,
+  "frames_per_clip": 60,
+  "n_sample_images": 50,
+  "gt_dup_iou": 0.9,
+  "match_iou": 0.5,
+  "report_ious": [
+   0.5,
+   0.3
+  ],
+  "size_edges": [
+   0.05,
+   0.15
+  ]
+ },
+ "cells": {
+  "rgb_person": 0.21166229430002384,
+  "rgb_vehicle": 0.6009197751660705,
+  "ir_any": 0.008264462809917356
+ },
+ "overall_mean_of_cells": 0.2736155107586706,
+ "pooled": 0.27897968823807273,
+ "counts": {
+  "0.5": {
+   "rgb_person": [
+    1775,
+    8386
+   ],
+   "rgb_person|0.05-0.15": [
+    1479,
+    3044
+   ],
+   "rgb_person|G330": [
+    236,
+    403
+   ],
+   "rgb_person|>=0.15": [
+    135,
+    160
+   ],
+   "rgb_person|<0.05": [
+    161,
+    5182
+   ],
+   "rgb_vehicle": [
+    1176,
+    1957
+   ],
+   "rgb_vehicle|<0.05": [
+    510,
+    1181
+   ],
+   "rgb_vehicle|G336": [
+    215,
+    545
+   ],
+   "rgb_person|G336": [
+    226,
+    2109
+   ],
+   "rgb_vehicle|>=0.15": [
+    204,
+    210
+   ],
+   "rgb_vehicle|0.05-0.15": [
+    462,
+    566
+   ],
+   "rgb_vehicle|G340": [
+    355,
+    456
+   ],
+   "rgb_person|G340": [
+    195,
+    1027
+   ],
+   "rgb_vehicle|G424": [
+    282,
+    486
+   ],
+   "rgb_person|G424": [
+    162,
+    2123
+   ],
+   "rgb_person|G436": [
+    956,
+    2724
+   ],
+   "rgb_vehicle|G436": [
+    324,
+    470
+   ],
+   "ir_any": [
+    2,
+    242
+   ],
+   "ir_any|0.05-0.15": [
+    2,
+    84
+   ],
+   "ir_any|G474": [
+    2,
+    242
+   ],
+   "ir_any|src=CMU-v2": [
+    0,
+    231
+   ],
+   "ir_any|>=0.15": [
+    0,
+    158
+   ],
+   "ir_any|src=IBM-person-vehicle": [
+    2,
+    11
+   ]
+  },
+  "0.3": {
+   "rgb_person": [
+    1929,
+    8386
+   ],
+   "rgb_person|0.05-0.15": [
+    1595,
+    3044
+   ],
+   "rgb_person|G330": [
+    239,
+    403
+   ],
+   "rgb_person|>=0.15": [
+    136,
+    160
+   ],
+   "rgb_person|<0.05": [
+    198,
+    5182
+   ],
+   "rgb_vehicle": [
+    1240,
+    1957
+   ],
+   "rgb_vehicle|<0.05": [
+    559,
+    1181
+   ],
+   "rgb_vehicle|G336": [
+    244,
+    545
+   ],
+   "rgb_person|G336": [
+    255,
+    2109
+   ],
+   "rgb_vehicle|>=0.15": [
+    206,
+    210
+   ],
+   "rgb_vehicle|0.05-0.15": [
+    475,
+    566
+   ],
+   "rgb_vehicle|G340": [
+    386,
+    456
+   ],
+   "rgb_person|G340": [
+    211,
+    1027
+   ],
+   "rgb_vehicle|G424": [
+    284,
+    486
+   ],
+   "rgb_person|G424": [
+    174,
+    2123
+   ],
+   "rgb_person|G436": [
+    1050,
+    2724
+   ],
+   "rgb_vehicle|G436": [
+    326,
+    470
+   ],
+   "ir_any": [
+    27,
+    242
+   ],
+   "ir_any|0.05-0.15": [
+    2,
+    84
+   ],
+   "ir_any|G474": [
+    27,
+    242
+   ],
+   "ir_any|src=CMU-v2": [
+    25,
+    231
+   ],
+   "ir_any|>=0.15": [
+    25,
+    158
+   ],
+   "ir_any|src=IBM-person-vehicle": [
+    2,
+    11
+   ]
+  },
+  "centre": {
+   "rgb_person": [
+    1945,
+    8386
+   ],
+   "rgb_person|0.05-0.15": [
+    1595,
+    3044
+   ],
+   "rgb_person|G330": [
+    241,
+    403
+   ],
+   "rgb_person|>=0.15": [
+    142,
+    160
+   ],
+   "rgb_person|<0.05": [
+    208,
+    5182
+   ],
+   "rgb_vehicle": [
+    1259,
+    1957
+   ],
+   "rgb_vehicle|<0.05": [
+    576,
+    1181
+   ],
+   "rgb_vehicle|G336": [
+    246,
+    545
+   ],
+   "rgb_person|G336": [
+    259,
+    2109
+   ],
+   "rgb_vehicle|>=0.15": [
+    206,
+    210
+   ],
+   "rgb_vehicle|0.05-0.15": [
+    477,
+    566
+   ],
+   "rgb_vehicle|G340": [
+    399,
+    456
+   ],
+   "rgb_person|G340": [
+    215,
+    1027
+   ],
+   "rgb_vehicle|G424": [
+    288,
+    486
+   ],
+   "rgb_person|G424": [
+    177,
+    2123
+   ],
+   "rgb_person|G436": [
+    1053,
+    2724
+   ],
+   "rgb_vehicle|G436": [
+    326,
+    470
+   ],
+   "ir_any": [
+    51,
+    242
+   ],
+   "ir_any|0.05-0.15": [
+    4,
+    84
+   ],
+   "ir_any|G474": [
+    51,
+    242
+   ],
+   "ir_any|src=CMU-v2": [
+    49,
+    231
+   ],
+   "ir_any|>=0.15": [
+    47,
+    158
+   ],
+   "ir_any|src=IBM-person-vehicle": [
+    2,
+    11
+   ]
+  }
+ },
+ "n_frames": 2680,
+ "projection": {
+  "rgb": {
+   "cpu_h": 1.4103137214024253,
+   "detect_h": 0.454088343701626,
+   "detect_fps": 228.55501160994686,
+   "decode_mog2_x_realtime": 14.717883700863807,
+   "frames": 373623.0
+  },
+  "ir": {
+   "cpu_h": 0.069022129614839,
+   "detect_h": 0.10142875628631096,
+   "detect_fps": 209.48520766730257,
+   "decode_mog2_x_realtime": 61.568149788023995,
+   "frames": 76492.16666666666
+  }
+ },
+ "projected_total_h": 2.034852951005201
+}
