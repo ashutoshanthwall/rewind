@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup**
+Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup (complete); next: 1 — Ingest**
 
 ---
 
@@ -165,3 +165,62 @@ Deadline: Fri 30 Oct 2026 · Current phase: **0 — Setup**
 - Open `results/reports/selection_0.3.md`; the selected cameras, dates and totals should match the table above.
 - Look at 1 frame per selected camera on each of the 3 dates (same view?).
 - Read `docs/meva_notes.md`, especially the third-party-label rules.
+
+---
+
+## Step 0.4 — Download (Sat 24 → Sun 25 Oct)
+
+**Done**
+- `scripts/download.py`: reads `data/selection.txt`, downloads each key with `aws s3 cp --no-sign-request` to
+  `data/raw/<name>.part`, checks **size and S3 ETag**, then renames it to the final name. Re-running resumes:
+  files already under their final name with the right size are skipped. A final file with the wrong size is never
+  touched (the script stops). Checks that 10 GB stays free (`--min-free-gb`). Logs to the terminal and
+  `data/download.log`. When everything is verified it sets files to `0444` and `data/raw/` to `0555`. It refuses
+  to lock if files outside the selection are present, and refuses to download into a locked folder.
+  `--verify-existing` re-checks size + ETag of the files already there and changes nothing.
+- **Why the ETag check:** the MEVA objects have no stored checksum and mostly multipart ETags (`<md5>-<parts>`),
+  which `aws s3 cp` cannot check (no checksum fields came back from `head-object --checksum-mode ENABLED`).
+  The script recomputes the ETag locally: plain MD5 for single-part objects, MD5 of the 8 MiB part MD5s for
+  multipart ones. The 8 MiB part size was checked on all 1,073 objects under `drops-123-r13/2018-03-07/`.
+  A file whose part count doesn't fit 8 MiB is refused, never passed.
+- `tests/test_download.py`: 16 tests. They cover selection parsing (bad lines, duplicate names, empty file),
+  resume planning, refusing a wrong-size file, permissions, ETag vectors (RFC 1321 `MD5("abc")`, 3-part toy case,
+  impossible part count), the `download_one` rename only after the checks, a same-size corrupt download caught
+  only by the ETag and kept as `.part`, and stray files.
+- End-to-end test before the full run, on 2 G474 clips in the scratchpad (not `data/raw/`): the first run
+  downloaded both, the second skipped both, the permissions were set, and a missing file in the locked folder
+  was refused.
+- PROMPT R found 4 problems and fixed them: size-only verification (ETag added), download loop untested
+  (`download_one` extracted and tested), stray files only warned about (now an error), and my report claiming
+  "verifies" for a size-only check.
+
+**Key numbers**
+- Ashutosh ran the full download in their own terminal in one run, without restarts:
+  2026-10-24 22:04:03 → 2026-10-25 00:15:22 (**2 h 11 min, 5.1 MB/s average**). Pre-run estimate from one timed
+  182 MB clip: about 1.9 h.
+- **300/300 files, 39,855,653,762 bytes**. File names and sizes are identical to `data/selection.txt`.
+  Permissions: files `-r--r--r--`, folder `dr-xr-xr-x`.
+- `--verify-existing`: **size + ETag match for all 300 files** (115 s, read-only). Negative control: flipping one
+  byte in a scratch copy of a real 182 MB file kept the size but failed the ETag check.
+- Disk: 92 GB free on `/` after the download.
+- 69/69 tests pass.
+
+**Decisions**
+- `data/raw/` is flat (file names are unique; the duplicate-name check enforces it). The S3 key prefix is
+  recoverable from `data/selection.txt`.
+- The bucket name, the 8 MiB part size and `--min-free-gb` stay in the script, not `config.yaml`. They are dataset
+  facts and a disk-safety option, not pipeline tunables.
+- To add files later, the folder must be unlocked by hand (`chmod u+w data/raw`). The script never unlocks it itself.
+
+**Open issues**
+- An ETag match proves the files equal the bucket objects, not that the bucket content is authentic. Integrity from
+  import onward will be backed by SHA-256 at step 1.1.
+- Scripts still import each other by path, not as the `rewind` package (no build backend). Revisit at 1.1 if
+  scripts need `rewind.*`; adding a build backend changes `pyproject.toml`, so ask first.
+- Carried over from 0.3: `tsr0` end inclusive/exclusive; CMU/UMD timespan conventions; training-level label
+  completeness; camera views fixed across dates; `drop-4-hadcv22` not surveyed.
+
+**Verify by hand**
+- `ls data/raw | wc -l` → 300; `stat -c '%A' data/raw` → `dr-xr-xr-x`; try `touch data/raw/x` → it must fail.
+- Play 1 RGB and 1 IR file from `data/raw/` (e.g. with `ffplay`) to confirm they decode.
+- `tail -3 data/download.log` should end with `verified size + ETag of all 300 files`.
