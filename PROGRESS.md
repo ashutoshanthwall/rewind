@@ -289,6 +289,10 @@ Deadline: Fri 30 Oct 2026 · Current phase: **1 — Ingest: done (1.3 5-event ch
   `ffplay data/raw/2018-03-11.13-50-00.13-54-59.school.G330.r13.avi`
 - Read `rewind/ingest/manifest.py`, especially the frame index rule and `FRAME_SNAP_DECIMALS`. Be able to explain why `frame.pts` can't be trusted here and why the snap is needed (datetime stores 1/30 s as 33,333 µs).
 - Open `results/reports/manifest_1.1.md` and check the totals above.
+- 👤 **Done by Ashutosh, 25 Oct (after Phase 1): passed.** DB rows match the filenames for both clips (camera, date,
+  start time, modality; G330 300.33 s vs 299 s in the name = +1.33 s, G474 300.27 s vs 300 s = +0.27 s, both within
+  `ingest.max_name_duration_diff_s` 2.0). The G330 clip's Kitware files (kitware-meva-training: activities, types,
+  geom) carry exactly the clip's name. The original G330 file plays and shows the expected indoor scene.
 
 ---
 
