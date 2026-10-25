@@ -1,0 +1,2 @@
+query_id,old_event_id,new_event_id,reason
+tes-s20,9538,9532,"label box sits on a parked car; no vehicle in view stops during the labelled span (writer and critic, from proxy frames 238-256 s)"

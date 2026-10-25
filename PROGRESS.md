@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: 2.1 splits done (draw 2); next: 2.2 query worksheets, then Gate 2.2**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: 2.2 queries frozen (Gate 2.2 passed); next: 2.3 metrics + baselines**
 
 ---
 
@@ -656,3 +656,87 @@ G330 activities 23 · 1,296 · 4,669; types 32 · 31 · 35.
 - Read `rewind/eval/splits.py` module docstring and `meets_requirements`: be able to explain why blocks follow
   sessions, why the assignment is random among valid ones, and why draw 1 was replaced (camera rule).
 - `uv run pytest -q tests/test_splits.py` → 37 passed.
+
+---
+
+## Step 2.2 — Queries, GATE 2.2 (Sun 25 Oct)
+
+**Queries drafted by Claude Code from labels and keyframes in witness style, reviewed by the user, frozen before any
+search code existed.** (Deviation from CLAUDE.md 1.10 / step 2.2, which have the user write them; Ashutosh's decision,
+25 Oct.)
+
+**Done**
+- `rewind/eval/queries.py` + `scripts/make_worksheets.py`: seeded plan (config `queries:`, seed 22) fixing, before
+  any keyframe was looked at, each row's event, kind, qtype, specificity and modality; worksheets
+  `eval/queries/worksheet_<split>.csv` and one keyframe sheet per row (middle frame with label boxes; first frame,
+  last frame, zoom), decoded sequentially from the proxies. Sheets are gitignored (regenerable, 22 MB).
+- Drafting (multi-agent): 4 writers (labels + sheets only, fixed kind/qtype/specificity, witness rules: everyday
+  words, no label/technical/caption wording, only details visible in the sheet, no colours on IR), then 1 critic who
+  revised 17 of 60 (6 category queries with one keyframe's setting, 4 wrong specificity, 5 details not visible —
+  phone, typing, age, direction, "coffee table" — 2 repeated openings). Then 1 count fix (tes-s11 "a few" → "two")
+  and casing/full stop made uniform (no wording change).
+- **1 replacement:** tes-s20 (IR vehicle_stops, event 9538): label box on a parked car, no vehicle stops in the span
+  (writer and critic independently). New event drawn by a seeded rule (same type and modality, unused):
+  9532 (same clip, 230.3-234.2 s). Logged in `eval/queries/replacements.csv`; query written from its sheet.
+- `scripts/review_queries.py`: local HTML with 15 seeded-random queries next to their sheets → **approved by
+  Ashutosh** (25 Oct).
+- `scripts/freeze_queries.py`: validates every row (fields, wording lint, specific events exist / in split / not
+  boundary-flagged / match the DB; category types have ≥ 10 eligible RGB activities), writes
+  `eval/queries/queries_<split>.csv` and `eval/queries/HASHES` (sha256sum format: 3 query files, 3 worksheets,
+  replacements.csv). Refuses to run twice; `make_splits --rebuild` and `make_worksheets` refuse too.
+- `load_queries(queries_dir, split, allow_test=False)` checks all hashes on every load and refuses test (8.2 only).
+- Tests: `tests/test_queries.py` (plan, 5) — caught a bug: category types could qualify by counting IR events
+  while examples are RGB-only; fixed, the real plan was unchanged (re-derived, identical).
+  `tests/test_frozen_queries.py` (7): hashes match, no unhashed CSV, an edit is detected, frozen shape, test guard,
+  and a scan of `rewind/` + `scripts/` that fails if any file outside an allow-list (the 2.1/2.2 tools) passes
+  `allow_test`, opens query/worksheet files directly, or queries `event_splits` / `video_blocks` / `blocks`
+  (step 8.2 must add its script to that list on purpose). Suite: 228 pass.
+
+**PROMPT R** (after the freeze, before commit; inline code review + 1 independent agent re-checking the frozen
+ground truth without our code). Frozen content: **no problem found** — all 7 hashes; all 42 specific events
+(exist, right split, not boundary-flagged, single piece, ≥ 1 s, fields = DB, qtype ↔ type, IR = G474 contrib);
+all 18 category types (≥ 38 eligible RGB activities); all 60 sheets (top panel = frame (start+end)//2 by image
+matching, every label box at the right place); worksheets = query files; the replacement reason checked by eye.
+Code fixes (no frozen file touched):
+- Keyframe sheets were gitignored as "regenerable" but `make_worksheets` refuses after the freeze →
+  `--sheets-only` redraws them from the frozen worksheets; all 60 verified **byte-identical** to the reviewed ones.
+- Undocumented: actor boxes are drawn at the nearest annotated frame — 10 boxes in 7 rows came from 7-591 frames
+  away (secondary actors or first/last panel; worst tes-s09's dropped-off person, 203 frames off on the middle
+  panel). The 7 queries were re-read: each describes the right subject. Now documented; drawing unchanged.
+- Wording lint banned "box" (a witness may see a box) → allowed; lint tests added. Category rows now also checked
+  for qtype ↔ type at freezing. Zoom fallback labelled. Test-split access lint (above).
+- Note: `replacements.csv` reason says "proxy frames 238-256 s": it means proxy *times* 238-256 s (frames
+  ~7140-7680); the labelled span was 249.7-252.8 s. Frozen, so left as is.
+
+**Key numbers** — 60 queries: 18 category + 42 specific; tuning 9 / dev 17 / test 34.
+
+| split | category (vehicle_event / action) | specific vehicle_event / action / appearance | of which IR |
+|---|---|---|---|
+| tuning | 1 / 2 | 2 / 2 / 2 | 1 |
+| dev | 2 / 3 | 4 / 4 / 4 | 2 |
+| test | 2 / 8 | 6 / 9 / 9 | 4 |
+
+Specificity in thirds per split (tuning 3/3/3, dev 6/6/5, test 12/11/11 vague/moderate/detailed).
+HASHES: queries_tuning 6c70f93c…, queries_dev caea1717…, queries_test b033a97f….
+
+**Decisions**
+- Category ground truth = every activity of the type **in the query's split** (event columns empty in the frozen
+  file); specific ground truth = one activity (event_id, plus clip + src_ids to re-resolve if ids are rebuilt).
+- Specificity is part of each query (`specificity` column): breakdown by vague / moderate / detailed is possible.
+- Small/distant subjects were not replaced: only a missing/wrong label justifies a replacement.
+
+**Open issues (for 2.3 and later)**
+- Risk of bias: the queries come from the same assistant that will build the search (mitigated: seeded plan, label +
+  keyframe only, critic, user review, frozen before any search code). State this in the README / report.
+- dev-s05 (IR, turns left) and dev-s09 (IR, starts) describe the same moment; tes-s05 and tes-s13 are two people
+  entering dark cars at the same entrance seconds apart. Scored as written.
+- Vague specific queries match many events but have one correct answer; seconds-watched will punish them (intended).
+- Same activity on overlapping cameras: still to decide at 2.3 whether a same-type event on another camera at the same
+  time counts as a hit for a specific query (MEVA has no cross-camera links).
+- IR (G474) ground truth is third-party and incomplete: recall-type metrics only (Gate 0.3). Event 9538 (IR
+  vehicle_stops) looks mislabelled; it stays in the events table.
+
+**Verify by hand**
+- `cd eval/queries && sha256sum -c HASHES` → 7 × OK.
+- Optional: open `eval/queries/keyframes/tes-s09.jpg` — the cyan box (dropped-off person) is from ~7 s earlier.
+- Skim `eval/queries/queries_dev.csv` (17 rows): these drive Gates 4.4, 5.1, 6.2.

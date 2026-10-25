@@ -58,6 +58,24 @@ splits:
   # An event within this many seconds of a block of another split may be visible there too (camera clocks are
   # accurate to about +/- 1 s each, so two cameras can disagree by up to 2 s). Flagged, not deleted.
   boundary_pad_s: 2.0
+queries:
+  # step 2.2 worksheets (rewind/eval/queries.py, scripts/make_worksheets.py). Everything here is fixed before any
+  # keyframe is looked at or any query is written; the seed decides events and specificity, not the writer.
+  seed: 22
+  min_event_s: 1.0               # eligible event: >= 1 s, not cut at a clip edge, has boxes, not boundary-flagged
+  min_category_instances: 10     # a category type needs >= this many eligible RGB activities in the split
+  category:                      # per split: these vehicle types always, plus n_other random other types
+    tuning: {vehicle_types: [vehicle_stops], n_other: 2}
+    dev: {vehicle_types: [vehicle_starts, vehicle_stops], n_other: 3}
+    test: {vehicle_types: [vehicle_starts, vehicle_stops], n_other: 8}
+  specific:                      # per split: queries per qtype; ir = how many of them use IR (third-party) events
+    tuning: {vehicle_event: 2, action: 2, appearance: 2, ir: 1}
+    dev: {vehicle_event: 4, action: 4, appearance: 4, ir: 2}    # Gates 5.1 / 6.2 need action and vehicle_event on dev
+    test: {vehicle_event: 6, action: 9, appearance: 9, ir: 4}
+  ir_qtypes: [vehicle_event, action]   # IR slots take these qtypes in turn (no colour in IR: no appearance slots)
+  specificity: [vague, moderate, detailed]   # equal thirds per split, assigned by the seed
+  strip_width: 1280              # keyframe sheet width (px): middle frame on top; start, end, zoom below
+  review_n: 15                   # random rows shown for review before freezing (scripts.review_queries)
 sampling:
   appearance_fps: 1
   max_gap_s: 10

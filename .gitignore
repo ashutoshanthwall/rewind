@@ -23,3 +23,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 .ipynb_checkpoints/
+
+# Query keyframe sheets (~22 MB of MEVA frames): redraw byte for byte from the frozen worksheets with
+# uv run python -m scripts.make_worksheets --sheets-only
+eval/queries/keyframes/
+eval/queries/review.html
