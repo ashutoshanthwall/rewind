@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); next: Phase 3 — 3.1 MOG2 motion pass**
+Deadline: Fri 30 Oct 2026 · Current phase: **2 — Evaluation set: done; open-issue pass done (8 items, see end); standing policy rule 16 added; next: Phase 3 — 3.1 MOG2 motion pass**
 
 ---
 
@@ -969,6 +969,41 @@ the ablation (at 4.4).**
   G336 changes are among the `flagged_*.jpg` before/after pairs).
 - Read one model card's "Out-of-Scope Use" section yourself, e.g.
   https://huggingface.co/laion/CLIP-ViT-B-16-laion2B-s34B-b88K
+
+---
+
+## Standing policy: minimise manual work (Sun 25 Oct) — CLAUDE.md rule 16
+
+Not a plan step. Ashutosh's instruction, added to CLAUDE.md 1.1 as **rule 16**. Rules 3 and 12 carry a note that rule 16
+amends them. No pipeline code, config or data changed.
+
+**Policy**
+- 👤 eyeball checks are replaced by measurements wherever annotations allow. Claude may view images and plots itself,
+  and reports say so ("viewed by Claude, n = …"). Ashutosh is asked only when no measurement is possible.
+- Claude decides gates using the pre-agreed rules and records the evidence, the rule applied and the decision here.
+  Ashutosh is asked only if the rule doesn't clearly decide, or the decision involves licenses, deletions or
+  `data/raw/`.
+- Long jobs: Claude launches them with `nohup`, logging to `results/logs/<job>.log` with a PID file
+  `results/logs/<job>.pid`, and gives the log path. No polling loops; Claude checks the log when Ashutosh next
+  writes or asks.
+- Unchanged (rule 6): ask first before any download over 1 GB, new dependency, deletion, `data/raw/` access or
+  out-of-step config change.
+
+**What this means for the remaining gates**
+- **Gate 3.3 (detector):** has a license side (Ultralytics AGPL-3.0 vs YOLOX Apache-2.0), so **Ashutosh decides**.
+  Claude provides measured detection recall vs MEVA annotated actor boxes instead of the 50-frame eyeball check.
+  VERIFY: the boxes (`geom.yml`) aren't fetched yet; check the download size first (ask if over 1 GB).
+- **Gates 4.4, 5.1, 6.2, 8.1:** Claude decides using the confirmed paired rule (open-issue item 8). Adopt the more
+  complex variant only if its mean is better **and** it wins on more queries than it loses; otherwise keep the
+  simpler one. Gate 6.2 also has the Wed 28 Oct 13:00 hard stop and the precision/recall check on tuning.
+- **Step 4.2 pretrained tag:** decided by the agreed tuning method (open-issue item 5). Claude decides and asks only
+  on a near-tie or a license question. All three candidates' licenses are already verified as permissive.
+- Step 8.3 failure causes: Claude assigns them where measurement or viewing supports it, and says which were viewed.
+  Gate 8.2 test results stay final whatever they are.
+
+**Housekeeping**
+- `results/logs/` added to `.gitignore`: logs and PID files are run-time state and aren't committed. Key numbers
+  from them go into this file and `results/reports/`.
 
 ---
 

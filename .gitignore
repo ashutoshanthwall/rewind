@@ -28,3 +28,6 @@ __pycache__/
 # uv run python -m scripts.make_worksheets --sheets-only
 eval/queries/keyframes/
 eval/queries/review.html
+
+# Background job logs + PID files (CLAUDE.md rule 16); key numbers go to PROGRESS.md / results/reports/
+results/logs/

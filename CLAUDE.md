@@ -14,7 +14,7 @@
 
 1. **Only do the step the user's prompt names.** Never start the next step on your own.
 2. For every step: say what you will do → do it → check it against the step's **Done when** → report results honestly → stop.
-3. **🚦 Gates:** at a gate, present the evidence and wait. The user decides.
+3. **🚦 Gates:** at a gate, present the evidence and wait. The user decides. *(Amended by rule 16: decide yourself when a pre-agreed rule clearly decides.)*
 4. **Never fabricate results.** Every number you report must come from code you actually ran. If something was not run or failed, say so plainly.
 5. **Unverified facts:** mark with `VERIFY:` in code comments and reports. Several facts here (MEVA file naming, annotation format, activity names, model APIs, licenses) are best-effort and must be checked against real files, real library source and real license texts.
 6. **Ask first** before: any download over 1 GB, any deletion, anything touching `data/raw/`, adding a new dependency, or changing `configs/config.yaml` values outside the current step.
@@ -23,10 +23,15 @@
 9. **No hardcoded tunables.** Every threshold, rate, weight, class list, keyword list and model name lives in `configs/config.yaml`.
 10. **Tests are real.** No tests that only assert on mocks or trivially pass. Metric and rule code must be tested on toy cases with hand-computed answers.
 11. **Every experiment** appends one row to `results/experiments.csv` (timestamp, git hash, config hash, split, metrics, notes).
-12. **Long jobs** (download, transcoding, detection, embedding): write a resumable script with checkpoints and a progress log, then give the user the exact command to run in their own terminal. Do not run multi-hour jobs inside the session.
+12. **Long jobs** (download, transcoding, detection, embedding): write a resumable script with checkpoints and a progress log, then give the user the exact command to run in their own terminal. Do not run multi-hour jobs inside the session. *(Amended by rule 16: launch them yourself in the background.)*
 13. **At the end of every step:** update `PROGRESS.md` (what was done, key numbers, decisions, open issues) and commit with message `phaseX.Y: <summary>`.
 14. Prefer **simple, readable, maintainable** code. This is a solo project with a fixed deadline, and the user must be able to explain every file.
 15. **Never claim an event** (a vehicle stopped, a person entered) unless the observations and the configured rule support it. Similarity is not proof.
+16. **Minimise the user's manual work** (standing policy, 25 Oct). Where this conflicts with rules 3 or 12 or a 👤 box in Part 2, this rule wins.
+    - **Measure instead of eyeballing.** Replace 👤 eyeball checks with measurements wherever annotations allow (e.g. detection recall vs annotated boxes; activity score during labelled events vs random windows). Claude may also view images and plots itself and must say so in reports ("viewed by Claude, n = …"). Ask the user only when no measurement is possible.
+    - **Gates:** decide them using the pre-agreed decision rules in CLAUDE.md / PROGRESS.md, and record evidence, rule applied and decision in PROGRESS.md. Ask the user only if the rule does not clearly decide, or the decision involves licenses, deletions, or anything in `data/raw/`.
+    - **Long jobs:** launch in the background with `nohup`, log to a file under `results/logs/`, write a PID file next to it, tell the user the log path. Don't poll in a loop; check the log when the user next messages or asks.
+    - Rule 6 still holds: ask first before any download over 1 GB or any new dependency (and before deletions, `data/raw/`, out-of-step config changes).
 
 ## 1.2 What we are building
 
