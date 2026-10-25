@@ -17,12 +17,14 @@ Run from the repo root:
   uv run python -m scripts.embed_appearance --clips <clip> --out-root <scratch>      trial on single clips
   uv run python -m scripts.embed_appearance --check-preprocess <clip>                GPU vs open_clip PIL preprocessing
   uv run python -m scripts.embed_appearance --models ViT-B-16:laion2b_s34b_b88k ... --tuning-only   (4.2 tag check)
-  setsid nohup uv run python -m scripts.embed_appearance > results/logs/embed_appearance.log 2>&1 &   (full run)
+  setsid nohup uv run python -m scripts.embed_appearance --pid-file results/logs/embed_appearance.pid \
+      > results/logs/embed_appearance.log 2>&1 &                                       (full run, background)
 """
 
 import argparse
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 
@@ -180,7 +182,11 @@ def main() -> None:
     p.add_argument("--clips", nargs="+", help="only these clips (trial; no experiments row)")
     p.add_argument("--check-preprocess", metavar="CLIP")
     p.add_argument("--batch-size", type=int, default=None, help="images per CLIP call (default appearance.batch_size)")
+    p.add_argument("--pid-file", type=Path, help="write this process's PID here (background runs: the job itself, "
+                                                 "not the uv launcher)")
     args = p.parse_args()
+    if args.pid_file:
+        args.pid_file.write_text(f"{os.getpid()}\n")
     stamp = run_stamp(args.config)
     cfg = yaml.safe_load(args.config.read_text())
     a = cfg["appearance"]
