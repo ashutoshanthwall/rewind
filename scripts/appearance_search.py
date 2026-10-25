@@ -115,6 +115,8 @@ def tag_check(args, cfg, stamp) -> None:
     kmax = max(m["category_k"])
     conn = connect(args.db)
     videos = split_videos(conn, "tuning")
+    if args.clips:      # smoke test of the code path only: ground truth stays split-wide, numbers are meaningless
+        videos = [v for v in videos if v.clip in args.clips]
     types = template_types(conn, "tuning", cfg["queries"]["min_category_instances"])
     per_type, summary, qrows = {}, {}, {}
     for spec in args.models:
@@ -209,7 +211,10 @@ def main() -> None:
                                                    "ViT-B-16-quickgelu:openai"])
     p.add_argument("--report", type=Path)
     p.add_argument("--no-log", action="store_true")
+    p.add_argument("--clips", nargs="+", help="smoke test on these clips only (implies --no-log; pass --report)")
     args = p.parse_args()
+    if args.clips:
+        args.no_log = True
     stamp = run_stamp(args.config)
     cfg = yaml.safe_load(args.config.read_text())
     if args.tag_check:

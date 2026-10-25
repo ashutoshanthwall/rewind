@@ -165,7 +165,7 @@ def check_preprocess(v, size, cfg, models) -> None:
         a, b = torch.stack(ours), torch.stack(theirs)
         za, zb = clip.encode_images(a).astype(np.float32), clip.encode_images(b).astype(np.float32)
         cos = (za * zb).sum(1)
-        print(f"{m}/{tag}: input |diff| mean {float((a - b).abs().mean()):.4f} max {float((a - b).abs().max()):.3f} "
+        print(f"{m}: input |diff| mean {float((a - b).abs().mean()):.4f} max {float((a - b).abs().max()):.3f} "
               f"(normalised units); embedding cosine ours vs PIL: min {cos.min():.4f} mean {cos.mean():.4f}")
 
 

@@ -151,7 +151,9 @@ appearance:
   crop_pad_frac: 0.2
   min_crop_px: 32
   # step 4.2 crop choice (rewind/embed/crops.py; check: scripts/check_crop_ranking.py, results/reports/crops_4.2.md)
-  crop_rank: TBD                    # score_area | moving_first; decided by the tuning check
+  crop_rank: moving_first           # score_area | moving_first. Tuning check: annotated actors covered by the <= 4
+                                    # crops (detection_then_motion), mean of RGB person / vehicle: 0.331 vs 0.169
+  # min_crop_px applies to a box's LONGER side (the embedded square is built from it; rewind/embed/crops.big_enough)
   crop_moving_share: 0.5            # a detection is "moving" if motion boxes cover this share of its box (not tuned)
   crop_dup_cover: 0.5               # a motion crop this covered by chosen detection crops is a duplicate (not tuned)
   # Frame views (rewind/embed/clip_model.py): all of tile0, tile1, pad are embedded; frame_mode picks what search
