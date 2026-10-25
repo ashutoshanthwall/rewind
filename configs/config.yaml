@@ -91,9 +91,19 @@ baselines:
   random_repeats: 100            # random order: metrics averaged over this many seeded shuffles per query
   witness_window_s: 600          # witness time +/- 10 min (CLAUDE.md 1.10); witness time = true event middle
 sampling:
+  # step 4.1 (rewind/embed/dedup.py, scripts/dedup_sweep.py, results/reports/dedup_4.1.md)
   appearance_fps: 1
   max_gap_s: 10
-  dedup_motion_pixel_thresh: TBD    # step 4.1, tuning split
+  dedup_motion_pixel_thresh: TBD    # step 4.1, tuning split. Share of the analysis frame's pixels that changed
+                                    # (> dedup_pixel_delta) inside the motion boxes of the frame and the last kept one
+  # Fixed before the sweep, not tuned:
+  dedup_pixel_delta: 25             # grey levels; well above H.264/sensor noise in static areas (a few levels)
+  dedup_det_iou: 0.5                # a detection is "unchanged" if a same-class box in the other frame has this IoU
+  dedup_det_min_score: 0.5          # only detections this confident must be matched. Measured on tuning (1 fps,
+                                    # consecutive frames): exact detection sets are identical on 0-3 % of outdoor
+                                    # seconds (low-score boxes flicker); with this floor 1-36 %, G330 90 %, G474 81 %
+  dedup_min_recall: 0.95            # CLAUDE.md step 4.1 target; AUTOPILOT.md 3: fewest kept frames at >= this recall
+  dedup_sweep: [0, 0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 1.0]   # 0 = keep all; 1.0 = detections + max gap only
 motion:
   # step 3.1 (rewind/motion/mog2.py). OpenCV MOG2 on grayscale frames scaled down to downscale_width.
   fps: 5
