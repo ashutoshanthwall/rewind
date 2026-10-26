@@ -157,8 +157,8 @@ appearance:
   crop_moving_share: 0.5            # a detection is "moving" if motion boxes cover this share of its box (not tuned)
   crop_dup_cover: 0.5               # a motion crop this covered by chosen detection crops is a duplicate (not tuned)
   # Frame views (rewind/embed/clip_model.py): all of tile0, tile1, pad are embedded; frame_mode picks what search
-  # uses. tiles2 = the two overlapping squares (main), pad = letterboxed whole frame (ablation at 4.4). Decided by
-  # Ashutosh (PROGRESS open-issue item 4): centre-crop loses 28 % of tuning events; if 4.4 shows no difference, pad.
+  # uses. tiles2 = the two overlapping squares, pad = letterboxed whole frame (no centre crop: it lost 28 % of tuning
+  # events, PROGRESS open-issue item 4). Gate 4.4: pad (tiles2 not adopted over it on dev).
   frame_mode: pad                   # tiles2 | pad; GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md)
   batch_size: 64                    # images per CLIP call; 16-256 run at the same speed (step 1.4)
   mean_center: false                # GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md): centering lost 3/2/12 with motion crops on dev

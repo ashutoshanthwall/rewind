@@ -32,6 +32,8 @@ Dev baselines for reference (`results/reports/baselines_3.2.md`): median seconds
 
 **Final variant: pad/none/raw** -> config appearance.frame_mode=pad, crop_source=none, mean_center=False.
 
+> **Note added 26 Oct (not generated):** this line is the literal pre-registered rule's outcome and was **not** applied. GATE 4.4 was decided by Ashutosh as **pad/motion/raw** (post-hoc tie-break reading; see PROGRESS.md, step 4.4, and `scripts/gate44_tiebreak.py`). The config holds pad / motion / mean_center false.
+
 ## Breakdowns, final variant (pad/none/raw); specific queries, descriptive where n < 5
 
 | qtype | n | median s | R@10 | hits |
