@@ -147,7 +147,7 @@ appearance:
   model: ViT-B-16
   pretrained: laion2b_s34b_b88k     # exact open_clip tag; step 4.2 tag check, near-tie decided by Ashutosh (PROGRESS.md)
   max_crops_per_frame: 4
-  crop_source: detection_then_motion   # detection_then_motion | motion | none
+  crop_source: motion               # detection_then_motion | motion | none; GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md)
   crop_pad_frac: 0.2
   min_crop_px: 32
   # step 4.2 crop choice (rewind/embed/crops.py; check: scripts/check_crop_ranking.py, results/reports/crops_4.2.md)
@@ -159,9 +159,9 @@ appearance:
   # Frame views (rewind/embed/clip_model.py): all of tile0, tile1, pad are embedded; frame_mode picks what search
   # uses. tiles2 = the two overlapping squares (main), pad = letterboxed whole frame (ablation at 4.4). Decided by
   # Ashutosh (PROGRESS open-issue item 4): centre-crop loses 28 % of tuning events; if 4.4 shows no difference, pad.
-  frame_mode: tiles2                # tiles2 | pad
+  frame_mode: pad                   # tiles2 | pad; GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md)
   batch_size: 64                    # images per CLIP call; 16-256 run at the same speed (step 1.4)
-  mean_center: true
+  mean_center: false                # GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md): centering lost 3/2/12 with motion crops on dev
 action:
   enabled: TBD                      # Gate 5.1
   model: TBD

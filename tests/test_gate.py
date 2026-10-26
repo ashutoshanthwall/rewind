@@ -52,3 +52,22 @@ def test_equal_everything_keeps_simple():
 def test_different_queries_refused():
     with pytest.raises(ValueError, match="different queries"):
         decide([spec("a", 1)], [spec("b", 1)])
+
+
+def test_gate44_tiebreak_reading():
+    from scripts.gate44_tiebreak import tiebreak_decision
+    # Conflict: specific diffs +300, +100, -10 (2 wins, 1 loss, mean +130), category -0.1 (1 loss) -> W/L 2/2.
+    # Literal rule: category worse -> not mean better -> keep simple. Tie-break: conflict, seconds better, but
+    # wins (2) > losses (2) fails -> keep simple.
+    d = decide([spec("a", 400), spec("b", 200), spec("c", 50), cat("d", 0.3)],
+               [spec("a", 100), spec("b", 100), spec("c", 60), cat("d", 0.2)])
+    assert not d["adopt"]
+    assert tiebreak_decision(d, "AP@50") == (True, False)
+    # Add one more specific win (+50): W/L 3/2 -> tie-break adopts, the literal rule still does not.
+    d = decide([spec("a", 400), spec("b", 200), spec("c", 50), spec("e", 100), cat("d", 0.3)],
+               [spec("a", 100), spec("b", 100), spec("c", 60), spec("e", 50), cat("d", 0.2)])
+    assert not d["adopt"]
+    assert tiebreak_decision(d, "AP@50") == (True, True)
+    # No conflict (both families worse) -> the literal rule's answer.
+    d = decide([spec("a", 100), cat("d", 0.3)], [spec("a", 200), cat("d", 0.2)])
+    assert tiebreak_decision(d, "AP@50") == (False, d["adopt"]) == (False, False)

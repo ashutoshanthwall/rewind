@@ -1600,7 +1600,7 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   0.04–0.08 (background dominates) → centered mean 0.28–0.76, sd 0.12–0.28. Whether this helps retrieval is decided
   at Gate 4.4, not here.
 
-## Step 4.4 — dev ablation run, GATE 4.4 PENDING (Mon 26 Oct, ~10:45)
+## Step 4.4 — dev ablation + GATE 4.4: DECIDED `pad/motion/raw` (Mon 26 Oct)
 
 - `scripts.appearance_search --ablation` (15 s): 12 variants × 17 dev queries (12 specific, 5 category), 12
   experiments rows at `282334b`; report `results/reports/ablation_4.4.md`.
@@ -1617,7 +1617,30 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   adopted (3/2/12 with motion crops, category −0.050 CI excludes 0); tiles2 not adopted over pad.
 - Observation (not acted on): centering hurts once crops are in; the camera mean is taken over frames and crops
   together. A per-camera-per-type mean is a candidate fix, testable on tuning.
-- **Waiting for Ashutosh:** interpreting the rule after seeing dev results is a protocol decision.
+- **GATE 4.4 decision (Ashutosh, after seeing the dev results): `pad/motion/raw`** — the tie-break reading above.
+  Honest record: (1) this reading was chosen AFTER the dev numbers were known; (2) the agreed tie-break rule was
+  written for variants of equal complexity, and crops vs no crops is not that, so this is Ashutosh's explicit
+  gate decision, not an automatic rule application. The literal rule's outcome (`pad/none/raw`) stays in
+  `results/reports/ablation_4.4.md` as the evidence. Test split untouched; 8.1 re-runs the dev ablations.
+  Reproducible: `uv run python -m scripts.gate44_tiebreak` (log `results/logs/gate44_tiebreak.log`; same numbers);
+  `tiebreak_decision` has a hand-worked test in `tests/test_gate.py` (suite 315 pass).
+- **Config:** `appearance.frame_mode: pad`, `crop_source: motion`, `mean_center: false`. 4.3 index re-collected for
+  the new main variant (175,039 rows; `centered_pad_motion.npy` kept for ablation). **Detection crops are not used
+  for retrieval** (they lost to motion crops, 6/4/7); detections still drive dedup (4.1) and the event branch (Phase 6).
+- **Look at the results instead of the 👤 watch-5 check (viewed by Claude, n = 12 dev specific queries, 24 frames:
+  ground-truth mid frame vs the top-1 clip's best hit with its box):** boxes land on the objects they claim (time,
+  proxy seek and box scaling consistent). **No top-1 clip is the correct event**; first correct ranks 2, 2, 2, 9, 14,
+  25, 27, 63, 81 and 3 misses. Failure patterns: crowded gym (G330) — a query about one person in a crowd matches
+  any single walking person; distant cars give tiny crops (G424/G436 far road); IR queries (s05, s09 on G474) never
+  rank an IR clip first — top-1 is an RGB car (s09: a red SUV at the G336 roundabout); vehicle_event R@10 is 0.
+  So the gain over baselines comes from ranking, not top-1 precision: median 394 s watched vs motion baseline 1,513.
+
+**Open issues after Phase 4**
+- Dev is small (12 specific + 5 category queries): every gate decision here is noisy; CIs are wide.
+- Centering hurts once crops are in (one camera mean over frames and crops together). Per-camera-per-type means are
+  a candidate fix — test on **tuning** only if time allows; not scheduled.
+- vehicle_event queries: R@10 0 on dev — the event branch (Phase 6) is where this can improve.
+- IR retrieval is weak (few IR crops: detector recall on IR is low, Gate 3.3).
 
 ## Pre-agreed decision rules (Ashutosh, Mon 26 Oct) — apply without asking (CLAUDE.md rule 16)
 
