@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE
+Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median
 
 ---
 
@@ -2251,6 +2251,77 @@ try/except, no test-split access (indexes hold footage of all splits, no labels 
   test footage (no labels, no results kept); noted for honesty.
 - `build_indexes` replaces an index directory it rebuilds (derived data under `artifacts/indexes/`).
 - `-march=native`: the module must be built on the machine that runs it (README, step 10.1).
+
+## Step 7.4 — fusion + grouping; action weight tuned on tuning: **2** (pre-registered rule; Mon 26 Oct, ~21:10)
+
+Order note: 7.4 ran before the 7.3 latency measurement because the API refuses to start on `weights.action: TBD`.
+
+**Done**
+- `rewind/search/fusion.py`: per branch z-score over its top-k hits (population sd; < 2 hits or all-equal scores ->
+  z = 0, tested with an exact max == min check because `std` of equal floats is ~1e-17, a bug the test caught) ->
+  fused = weight x z; a weight-0 branch is **excluded**, not zero-scored -> pooled hits -> `core.group_hits` (merge
+  5 s, cap 60 s, mean top-3, ±5 s context cut to the video) -> each clip records the branches with a hit between its
+  first and last hit and each branch's best hit ("why it matched"). `top_n` builds only the returned clips.
+- Split restriction for evaluation: `Engine.search(ranges=...)` (camera -> disjoint wall-clock ranges) and
+  `camera_ranges()` (a split's videos per camera, joined within `ingest.max_name_duration_diff_s`, end 1 µs before
+  the exclusive video end); every returned row is checked to belong to a split video (fails loudly otherwise).
+- `scripts/fusion_tune.py`: engine (HNSW, ef 200) -> fusion -> clips -> the same `query_rows` / metrics as the
+  baselines and Gates 4.4 / 5.1; grid {0, 0.25, 0.5, 1, 2}; plus a NumPy brute-force appearance-only cross-check.
+- Tests: `tests/test_fusion.py` (10, hand-computed: z-scores, weights reorder clips, weight 0 excluded, empty branch,
+  overlap -> one clip with both branches + best hits, same second in two branches counted once, context cut at
+  video start/end, mixed-branch chain capped at 60 s, TBD/negative/bool weights rejected, top_n = first clips of the
+  full list); `tests/test_fusion_tune.py` (3: the rule); `tests/test_engine.py` +2 (camera_ranges hand-computed,
+  multi-range search = brute force over the union, overlapping ranges rejected).
+
+**Sweep (tuning: 58 clips, 4.83 h; 6 specific + 3 category queries; `results/reports/fusion_7.4.md`, 6 rows)**
+
+| action weight | R@10 | median s watched | category mAP@10 |
+|---|---|---|---|
+| 0 (appearance only) | 0.000 | 18,290 | 0.249 |
+| 0.25 | 0.000 | 9,868 | 0.252 |
+| 0.5 | 0.000 | 9,868 | 0.308 |
+| 1 | 0.000 | 9,868 | 0.269 |
+| **2** | 0.000 | **9,851** | 0.213 |
+
+- **Rule applied as written:** R@10 ties at 0 for every weight -> tie-break lower median seconds -> **2** (unique).
+  `search.weights.action: 2` in config.
+- **Flag for Ashutosh (the rule decides, but on noise):** the tie-break is a **17 s** difference, set by one query's
+  query: the median of the 6 specific queries is the mean of the 3rd and 4th values; the 4th is a miss (~19.1k s)
+  and the 3rd is 565 s at w=2 (tun-s03) vs 598 s at w=0.25 / 0.5 / 1 (tun-s02). Category mAP@10 is lowest at w=2 (0.213 vs 0.308 at 0.5); the rule does not look at category queries.
+  Per the pre-registration this is reported as it stands; departing from it would be Ashutosh's recorded decision.
+- What every weight > 0 does: the action branch rescues **tun-s02** (appearance, rank 31 -> 28-31) and **tun-s05**
+  (IR vehicle_event, miss -> rank 13-22); the median halves (18,290 -> ~9,860 s). Still 3 of 6 specific queries are
+  missed by every weight (top-200 per branch), and no query is in the top 10.
+- **Cross-check:** engine weight 0 = NumPy brute force on every query (one miss differs by 9 s in miss cost only):
+  HNSW at ef 200 does not change the tuning metrics.
+- Dev and test untouched (dev is for 8.1).
+
+## Step 7.3 — pybind11 + FastAPI (Mon 26 Oct, ~21:15)
+
+**Done**
+- Bindings: `rewind_engine` (built in 7.1; GIL released, per-index C++ lock).
+- `rewind/api/app.py`: loads config, manifest + proxies, the 12 indexes, CLIP and LanguageBind text encoders once
+  (`Rewind`); GPU encoders under one Python lock. `GET /search` (q, cameras, start/end wall clock, k clips; default
+  `api.default_clips` 20, max `api.max_clips` 100) -> per active branch with weight > 0: engine top k_per_index ->
+  fusion -> clips with camera, proxy path, span in file and wall clock, score, `matched_by`, best hit per branch
+  (appearance box + crop type) + the coverage line + a fixed note ("candidate clips ... similarity is not proof") +
+  timings. `GET /coverage` (hours per camera in the selection). An empty result still carries the coverage
+  ("Searched 0.0 h ..."). Bad input -> HTTP 400 with the reason. Start: `uv run uvicorn rewind.api.app:app`.
+- `scripts/api_latency.py`: app behind uvicorn on 127.0.0.1, 20 queries (9 tuning query texts + 11 templated
+  activity prompts; text only), 2 warm-up, timed request -> parsed JSON.
+- Tests: `tests/test_api.py` (3: overlap, coverage hand-computed incl. a range with no footage, selection errors).
+
+**Key numbers (`results/reports/api_7.3.md`)**: start-up **12.3 s**; **end-to-end median 46 ms, p95 48 ms** (20
+queries); server side median: encode 8.3 ms, search (2 branches x 6 cameras) 25.8 ms, fusion + clips 8.9 ms. A
+camera + 1 h filtered request: 24 ms (both branches answered by `exact_small`). Coverage of everything: 25.0 h,
+6 cameras.
+- **First measurement was 233 ms median / 397 ms p95**: fusion took 196 ms (profiled: a pandas groupby per clip for
+  "why it matched", over ~400 clips). Fixed (NumPy row index computed once + only the returned clips annotated):
+  fusion of 394 clips 258 -> 11 ms; same clips (tests). Both experiments rows are in the log (15:42 superseded by
+  15:43 UTC).
+- Measured while the step 7.2 synthetic build ran on one core (load average 1.8).
+
+**Open issues**: proxies are not served yet (UI, step 9.1); no auth (local tool).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 

@@ -98,6 +98,21 @@ def index_path(root: Path, branch: str, camera: str) -> Path:
     return root / branch / camera
 
 
+def camera_ranges(videos: list, join_gap_s: float) -> dict[str, list[tuple[float, float]]]:
+    """camera -> sorted disjoint wall-clock ranges covering these videos (e.g. one split's). Videos of a camera that
+    follow each other within join_gap_s become one range; a range ends 1 us before its last video's end (end_time is
+    exclusive, and a next video of another split may start exactly there)."""
+    out: dict[str, list[list[float]]] = {}
+    for v in sorted(videos, key=lambda v: (v.camera_id, v.start_time)):
+        a, b = wall_seconds(v.start_time), wall_seconds(v.end_time) - 1e-6
+        rs = out.setdefault(v.camera_id, [])
+        if rs and a <= rs[-1][1] + join_gap_s:
+            rs[-1][1] = max(rs[-1][1], b)
+        else:
+            rs.append([a, b])
+    return {c: [(a, b) for a, b in rs] for c, rs in out.items()}
+
+
 def write_store(d: Path, x: np.ndarray, model: str) -> str:
     """Writes vectors.f32 + manifest.json (engine format) for float32 unit rows; returns the SHA-256."""
     if x.dtype != np.float32 or not x.flags.c_contiguous:
@@ -166,17 +181,27 @@ class Engine:
         return self.collection.get(index_name(branch, self.cameras[branch][0])).dim
 
     def search(self, branch: str, q: np.ndarray, k: int | None = None, cameras=None, t0: float | None = None,
-               t1: float | None = None, exact: bool = False) -> pd.DataFrame:
+               t1: float | None = None, exact: bool = False, ranges: dict | None = None) -> pd.DataFrame:
         """Top k rows of a branch over the selected cameras (default: all) and wall-clock range [t0, t1] (both or
-        neither). Returns the metadata rows + score + index + method, best first."""
+        neither). ranges: instead of cameras / t0 / t1, camera -> disjoint [(t0, t1), ...] (e.g. one split's footage,
+        camera_ranges()): the top k over the union. Returns the metadata rows + score + index + method, best first."""
         k = self.cfg.k if k is None else k
-        cams = self.cameras[branch] if cameras is None else list(cameras)
-        unknown = set(cams) - set(self.cameras[branch])
+        if ranges is not None:
+            if cameras is not None or t0 is not None or t1 is not None:
+                raise ValueError("give ranges, or cameras / t0 / t1, not both")
+            for cam, rs in ranges.items():
+                for (a0, a1), (b0, b1) in zip(rs, rs[1:]):
+                    if not (a0 <= a1 < b0 <= b1):
+                        raise ValueError(f"{cam}: ranges must be sorted and disjoint, got {(a0, a1)} then {(b0, b1)}")
+            jobs = [(cam, r0, r1) for cam, rs in ranges.items() for r0, r1 in rs]
+        else:
+            jobs = [(cam, t0, t1) for cam in (self.cameras[branch] if cameras is None else list(cameras))]
+        unknown = {cam for cam, _, _ in jobs} - set(self.cameras[branch])
         if unknown:
             raise ValueError(f"{branch}: no index for cameras {sorted(unknown)}")
         q = np.ascontiguousarray(q, dtype=np.float32)
         parts = []
-        for cam in cams:
+        for cam, t0, t1 in jobs:
             name = index_name(branch, cam)
             idx = self.collection.get(name)
             if exact:

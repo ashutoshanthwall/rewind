@@ -224,7 +224,8 @@ search:
   k_per_index: 200
   ef_search: 200                    # must be >= k
   fusion: zscore_weighted
-  weights: {appearance: 1.0, action: TBD, events: 0}     # tuned on tuning split; events 0: branch dropped at Gate 6.2
+  weights: {appearance: 1.0, action: 2, events: 0}       # action: step 7.4 pre-registered rule on tuning (PROGRESS.md;
+                                                          # all R@10 tied at 0, median-seconds tie-break). events 0: dropped
   merge_gap_s: 5
   max_clip_s: 60
   clip_rank: mean_top3
@@ -239,6 +240,20 @@ search:
   filter_min_fraction: 1.0          # "too few results": fewer in-range HNSW hits than this share of min(k, rows in
                                     # range) -> exact search over the range. 1.0 = a filtered search always returns
                                     # min(k, rows in range) results. Not tuned
+api:
+  # step 7.3 (rewind/api/app.py)
+  default_clips: 20                 # clips returned by /search when k is not given
+  max_clips: 100                    # largest k a client may ask for
+benchmark:
+  # step 7.2 (scripts/benchmark_engine.py): HNSW vs exact brute force; measurement settings, not search settings
+  ef_sweep: [200, 300, 400, 600, 800]   # >= search.k_per_index
+  warmup: 5                         # queries run and discarded before timing
+  repetitions: 3                    # passes over all queries; a query's latency = median of its passes
+  seed: 72
+  filter_window_s: 1800             # real-data time-filter check: random 30-min windows (the split block length)
+  filter_windows_per_camera: 10
+  synthetic_dim: 512
+  synthetic_queries: 100
 motion_check:
   # step 3.1 check (scripts/check_motion.py): activity in labelled events vs random windows of the same length
   seed: 31

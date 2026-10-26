@@ -141,3 +141,33 @@ def test_concurrent_searches_equal_serial(tmp_path):
     assert all(v == serial[i] for (w, _, i), v in out.items() if w % 2)
     filt = [eng.search("appearance", q, t0=1000.0, t1=9000.0)[["camera_id", "row"]].values.tolist() for q in qs]
     assert all(v == filt[i] for (w, _, i), v in out.items() if not w % 2)
+
+
+def test_camera_ranges_hand_computed():
+    from rewind.search.engine import camera_ranges
+    t = lambda m, s=0: datetime(2018, 3, 7, 10, m, s)
+    vs = [Video(1, "a", "p", "G1", "rgb", t(0), 9000, 30.0),          # 10:00:00-10:05:00
+          Video(2, "b", "p", "G1", "rgb", t(5, 1), 9000, 30.0),       # starts 1 s after: joined (gap <= 2 s)
+          Video(3, "c", "p", "G1", "rgb", t(20), 9000, 30.0),         # 10:20:00-10:25:00: a new range
+          Video(4, "d", "p", "G2", "ir", t(0), 3000, 10.0)]           # other camera, 300 s
+    r = camera_ranges(vs, 2.0)
+    b = wall_seconds(t(0))
+    assert r["G1"] == [(b, pytest.approx(b + 601 - 1e-6)), (b + 1200, pytest.approx(b + 1500 - 1e-6))]
+    assert r["G2"] == [(b, pytest.approx(b + 300 - 1e-6))]
+    assert len(camera_ranges(vs, 0.5)["G1"]) == 3                     # gap 1 s > 0.5 s: not joined
+
+
+def test_engine_multi_range_matches_brute_force(tmp_path):
+    eng, data = make_engine(tmp_path, ["G1", "G2"])
+    ranges = {"G1": [(1000.0, 1099.0), (1500.0, 1799.0)], "G2": [(1200.0, 1299.0)]}
+    for q in unit(10, 32, 3):
+        want = sorted([w for cam, rs in ranges.items() for r0, r1 in rs for w in brute(data, [cam], q, 20, r0, r1)],
+                      key=lambda ci: (-float(data[ci[0]][0][ci[1]] @ q), ci))[:20]
+        ex = eng.search("appearance", q, ranges=ranges, exact=True)
+        assert list(zip(ex.camera_id, ex.row)) == want
+        got = eng.search("appearance", q, ranges=ranges)
+        assert all(any(r0 <= w <= r1 for r0, r1 in ranges[c]) for c, w in zip(got.camera_id, got.wall_s))
+    with pytest.raises(ValueError, match="disjoint"):
+        eng.search("appearance", unit(1, 32, 1)[0], ranges={"G1": [(1000.0, 1100.0), (1050.0, 1200.0)]})
+    with pytest.raises(ValueError, match="not both"):
+        eng.search("appearance", unit(1, 32, 1)[0], cameras=["G1"], ranges={"G1": [(1000.0, 1100.0)]})
