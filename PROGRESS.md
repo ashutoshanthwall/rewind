@@ -2384,6 +2384,42 @@ Time filter (60 random 30-min windows x 61 queries per branch): recall vs exact 
 - Background load: the 1-min load average recorded at the end of the 2M run was 11.0, so 2M latencies are noisier
   than the real-size ones; the 7.3 latency was measured while the synthetic build ran (load 1.8).
 
+## Phase 7 summary (Tue 27 Oct, ~01:00)
+
+Commits: `5b20e29` 7.1 · `316b3cd` 7.4 · `47321eb` 7.3 · `6bd4bfd` 7.2. pytest 390 pass; engine `sir_tests` 232 checks.
+
+- **7.1** Engine extended in place (64-bit sizes, named per-camera indexes, time filter with exact fallback, per-index
+  lock, pybind11). 12 indexes: appearance 175,039 rows (`pad/motion/raw` of the 456,293 stored vectors), action
+  44,682. Build 3 min 26 s, load 2.4 s.
+- **7.2** At real sizes HNSW gives little or no speed-up over NumPy brute force (appearance 13.7 vs 18.6 ms; action
+  slower, 9.5 vs 7.0 ms) at recall@200 ~0.94 (ef 200). It pays off only at 1M+ (exact 106–488 ms vs HNSW 3–12 ms), where
+  random-data recall is uninformative.
+- **7.3** API (`/search`, `/coverage`): start-up 12.3 s; **end-to-end median 46 ms, p95 48 ms** over 20 queries.
+- **7.4** Fusion + grouping with "why it matched"; action weight by the pre-registered rule on tuning:
+
+| action weight | tuning R@10 (6 specific) | median s watched | category mAP@10 |
+|---|---|---|---|
+| 0 | 0.000 | 18,290.0 | 0.249 |
+| 0.25 | 0.000 | 9,867.7 | 0.252 |
+| 0.5 | 0.000 | 9,867.7 | 0.308 |
+| 1 | 0.000 | 9,867.7 | 0.269 |
+| **2 (chosen)** | 0.000 | **9,851.1** | 0.213 |
+
+  **The chosen weight 2 is at the upper boundary of the grid.** The grid was not extended (Ashutosh's instruction).
+  It is chosen only by the tie-break, a 17 s difference that one query decides.
+
+**Flags carried into Phase 8 (for Ashutosh)**
+1. Action weight 2: a fragile 17 s tie-break, at the grid boundary; category mAP@10 is lowest at w=2 (0.213 vs
+   0.308 at 0.5). Any change from the rule's result would be Ashutosh's recorded decision; 8.1 ablations (dev) will
+   show appearance-only vs fused.
+2. `ef_search` kept at 200 (no rule covers it); ef 800 gives recall ~0.99 for +7–13 ms per branch; exact NumPy also
+   fits the budget. Decide at 8.1 (the HNSW vs brute-force ablation is on the 8.1 list).
+3. No query in the tuning top 10 at any weight; 3 of 6 specific tuning queries missed by every weight.
+4. Deck vs build: no GoogleTest (engine's own test harness kept) and no cpp-httplib (FastAPI); deck to be updated.
+5. `-march=native`: the engine module must be built on the machine that runs it (README, 10.1).
+6. Proxies not served by the API yet (9.1). Time filter: going exact directly for narrow windows would be faster
+   (not changed).
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
