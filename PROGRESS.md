@@ -1652,6 +1652,28 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
 - **Step 7.4 (fusion weights):** choose the weights that **maximise mean Recall@10 on tuning specific-event
   queries**; ties broken by **lower median seconds-watched**; grid **{0, 0.25, 0.5, 1, 2}** per non-appearance branch
   (appearance fixed at 1.0).
+- **Rule changes are pre-registered (Ashutosh, Mon 26 Oct, after Gate 4.4), for every remaining gate (5.1, 6.2, 7.4,
+  8.1):** any change to a decision rule must be written in PROGRESS.md (and committed) **before** that gate's results
+  are computed. **No further post-hoc reinterpretations.** If a rule turns out not to decide, or decides something
+  that looks wrong, report it as it stands and let Ashutosh decide; the record must show which rule was
+  pre-registered and that the decision departed from it.
+  - Consequence: the Gate 4.4 tie-break reading (families conflict → headline metric decides) was a one-off post-hoc
+    decision. It is **not** carried forward. Gates 5.1 / 6.2 / 8.1 use the confirmed paired rule
+    (`rewind/eval/gate.py`) as written, plus the tie-break above for equal-complexity variants only, unless a change
+    is recorded here before the gate runs.
+
+## Step 8.1 ablation list (dev; CLAUDE.md step 8.1 + additions)
+
+From CLAUDE.md 8.1: appearance-only; + action (if enabled); + events (if enabled); full fusion; crop_source none /
+motion / detection_then_motion; mean-centering on / off; HNSW vs brute force (metrics + latency); all broken down by
+qtype.
+Additions:
+- **Per-camera-per-type mean-centering (Ashutosh, Mon 26 Oct):** separate per-camera means for frame views and for
+  crops (each vector centered by the mean of its own camera AND type), vs one per-camera mean (step 4.3) vs no
+  centering. Why: at Gate 4.4 centering lost once crops were in (3/2/12 with motion crops), plausibly because one
+  camera mean over frames and crops together suits neither. Needs code before 8.1: means per (camera, type) in
+  `scripts/collect_appearance.py` and a centering mode in `scripts/appearance_search.py`, with a hand-computed test.
+  No labels used. Decided by the paired rule like every other 8.1 comparison (centering mode is the complex side).
 
 ## Engine copied into `engine/` (Mon 26 Oct, before step 7.1)
 
