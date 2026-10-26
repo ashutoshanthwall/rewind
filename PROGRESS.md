@@ -1564,6 +1564,30 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
 - `configs/config.yaml`: `appearance.pretrained: laion2b_s34b_b88k`. The 58 tuning clips already embedded with this
   tag (same settings hash) are reused by the full run.
 
+## Step 4.2 — full appearance embedding run: DONE (Mon 26 Oct, 09:51 → 10:36)
+
+- `scripts.embed_appearance` (laion2b_s34b_b88k, settings `db5765f2a902ab59`), launched with `nohup … &` (log
+  `results/logs/embed_appearance.log`, PID file); the 58 tuning clips from the tag check were reused (same hash).
+  242 clips / 20.2 h in **44.6 min (27× real time)**, peak VRAM 2,097 MiB, no errors; experiments row at `4194389`.
+- **Verified (all 300 clips):** `.npy` + `.parquet` + `.done.json` each; rows = vectors; fp16, finite, unit norm;
+  one settings hash; no partial files.
+- **Totals:** 90,161 candidates → **49,689 kept frames (55.1 %)** → **456,293 vectors** (149,067 frame views,
+  181,876 detection crops, 125,350 motion crops); **459 MB** on disk.
+
+  | camera | modality | clips | vectors |
+  |---|---|---|---|
+  | G330 | rgb | 51 | 83,201 |
+  | G336 | rgb | 51 | 94,568 |
+  | G340 | rgb | 49 | 62,423 |
+  | G424 | rgb | 50 | 96,247 |
+  | G436 | rgb | 48 | 104,797 |
+  | G474 | ir | 51 | 15,057 |
+
+  Detection crops by class: car 93,991, person 74,650, truck 11,136, bus 1,180, bicycle 701, motorcycle 218.
+- Review (PROMPT R, inline): no defects found in `embed_appearance.py`, `clip_model.py`, `crops.py`, `dedup.py`,
+  `store.py`; no label or test-split access. Note: IR G474 has few crops (15k vectors, 9.7k of them frame views):
+  detector recall on IR is low (Gate 3.3), so IR queries rely mostly on whole-frame views.
+
 ## Pre-agreed decision rules (Ashutosh, Mon 26 Oct) — apply without asking (CLAUDE.md rule 16)
 
 - **Tie-break:** when two variants have equal complexity and the gate rule does not decide, choose the better mean on
