@@ -2015,6 +2015,8 @@ cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (lapto
   vehicle_stops 0.574 / **0.444**, vehicle_starts 0.517 / **0.437** → **both fail** → `events.types: []` →
   "If none passes, the event branch is dropped (no dev run needed)". **The rule clearly decides; part 2 (dev queries)
   was not run.** The result does not depend on the selection objective: no grid setting passes either type.
+- **Confirmed by Ashutosh (26 Oct): no override** — the branch stays dropped per the pre-registered rule; the dev held-out
+  numbers (stops 0.58 / 0.50) do not change it.
 - **Config:** `events.enabled: false`, `events.types: []`, the selected rule values kept for the record,
   `search.weights.events: 0` (step 7.4 tunes `action` only).
 - Not run because the branch is dropped (written and unit-tested in this step; kept in the repo for the record):
@@ -2073,10 +2075,28 @@ cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (lapto
   | ByteTrack tracker | `rewind/track/bytetrack_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2021 Yifu Zhang | github.com/FoundationVision/ByteTrack @ `d1bf019`; Zhang et al., ECCV 2022. Used at step 6.1; the event branch was dropped at Gate 6.2 |
   | scipy | pip dependency (step 6.1) | BSD-3-Clause (VERIFY at 10.1) | 1.17.1 |
 
+## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
+
+- **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
+  labelled Kitware vehicle start/stop events on tuning, **87 %** have a ByteTrack track covering the labelled vehicle
+  (IoU >= 0.3 on >= half its 5 fps label frames), but the selected rule fires near (same type, ±2 s) only **54 %** of
+  those tracked events. Coverage drops for small vehicles (73 % for label boxes <= 34 px tall; G336 76–78 %).
+  Of 10 detected events viewed by Claude, 4 matched a label, **4 were parked cars in crowded rows whose box centre
+  jitters when a passing vehicle occludes them** (false stops/starts), and 2 were small distant cars (possibly real,
+  unlabelled stop-and-go). Result: best tuning P/R 0.574/0.444 (stops) and 0.517/0.437 (starts), chance level
+  (+30 s shift) ~0.15–0.19; no grid setting reaches 0.5/0.5 → branch dropped at Gate 6.2. Evidence:
+  `results/reports/events_6.1.md`, `events_6.1_grid.csv`, `events_6.1_dev.md`; the coverage diagnostic was a scratch
+  script (tuning only; numbers in "Step 6.1" above) — re-create it in `scripts/` if the report needs it reproducible.
+
 ---
 
 ## Later (deferred, not in current scope)
 
+- **Stop/start rule robust to box jitter (from Finding F1; Ashutosh, 26 Oct).** Smooth box jitter (e.g. a median or
+  Kalman-smoothed box centre, bottom-centre instead of centre, hysteresis with two speed thresholds) and ignore
+  near-static tracks (e.g. a minimum net displacement over the track before any stop/start can fire), so parked cars
+  occluded by passing traffic stop producing false events. Re-tune on tuning only and re-run Gate 6.2 as
+  pre-registered. Not scheduled: the branch stays dropped for the 30 Oct deliverable.
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every
   CLIP B/16 candidate on text→image retrieval (COCO R@1 0.478 vs 0.423 for the best permissive CLIP, laion2b).
   **Deferred (Ashutosh, 25 Oct): scope stays CLIP ViT-B/16** — a different model family is a scope change (CLAUDE.md
