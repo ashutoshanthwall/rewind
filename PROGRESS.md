@@ -1622,7 +1622,7 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   written for variants of equal complexity, and crops vs no crops is not that, so this is Ashutosh's explicit
   gate decision, not an automatic rule application. The literal rule's outcome (`pad/none/raw`) stays in
   `results/reports/ablation_4.4.md` as the evidence. Test split untouched; 8.1 re-runs the dev ablations.
-  Reproducible: `uv run python -m scripts.gate44_tiebreak` (log `results/logs/gate44_tiebreak.log`; same numbers);
+  Reproducible: `uv run python -m scripts.gate44_tiebreak` (same numbers; log kept locally, logs are gitignored);
   `tiebreak_decision` has a hand-worked test in `tests/test_gate.py` (suite 315 pass).
 - **Config:** `appearance.frame_mode: pad`, `crop_source: motion`, `mean_center: false`. 4.3 index re-collected for
   the new main variant (175,039 rows; `centered_pad_motion.npy` kept for ablation). **Detection crops are not used

@@ -1,5 +1,0 @@
-tiles2/motion/centered vs tiles2/none/centered: W/T/L 7/4/6; specific +5407 s; category -0.028; literal rule adopt=False; conflict=True; tie-break adopt=True
-tiles2/detection_then_motion/centered vs tiles2/motion/centered: W/T/L 6/4/7; specific -17 s; category -0.008; literal rule adopt=False; conflict=False; tie-break adopt=False
-tiles2/motion/centered vs tiles2/motion/raw: W/T/L 3/2/12; specific -1192 s; category -0.050; literal rule adopt=False; conflict=False; tie-break adopt=False
-tiles2/motion/raw vs pad/motion/raw: W/T/L 1/10/6; specific +4 s; category -0.007; literal rule adopt=False; conflict=True; tie-break adopt=False
-FINAL: pad/motion/raw: median s 394, hits 9/12, R@10 0.333, category mAP@50 0.110
