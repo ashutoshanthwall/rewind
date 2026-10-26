@@ -163,8 +163,8 @@ appearance:
   batch_size: 64                    # images per CLIP call; 16-256 run at the same speed (step 1.4)
   mean_center: false                # GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md): centering lost 3/2/12 with motion crops on dev
 action:
-  enabled: TBD                      # Gate 5.1
-  model: TBD
+  enabled: true                     # GATE 5.1 (26 Oct): pre-registered paired rule adopted LanguageBind, 7/3/3 (PROGRESS.md)
+  model: LanguageBind_Video_V1.5_FT  # dual encoder, 768-d; settings in action.languagebind
   frames_per_window: 8
   window_s: 4
   stride_s: 2

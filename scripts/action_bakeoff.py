@@ -116,8 +116,10 @@ def load_action(art: Path, model_key: str, videos: list, cfg: dict) -> tuple[np.
 class TextLookup:
     """encode_text() over query vectors precomputed by scripts/embed_action.py --encode-queries."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, settings: str):
         z = np.load(path)
+        if str(z["settings"]) != settings:
+            raise ValueError(f"{path}: text vectors from settings {z['settings']}, window vectors from {settings}")
         self.vec = {t: z["vectors"][i] for i, t in enumerate(z["texts"].tolist())}
 
     def encode_text(self, texts: list[str]) -> np.ndarray:
@@ -167,7 +169,8 @@ def main() -> None:
     clip = Clip(a["model"], a["pretrained"])
     rows = {"a": query_rows(conn, args.split, WindowIndex(xa, ma, videos), clip, cfg, scfg, QTYPES),
             "b": query_rows(conn, args.split, WindowIndex(xb, mb, videos),
-                            TextLookup(action_dir(args.art, args.model) / f"text_vectors_{args.split}.npz"), cfg, scfg,
+                            TextLookup(action_dir(args.art, args.model) / f"text_vectors_{args.split}.npz", info["settings"]),
+                            cfg, scfg,
                             QTYPES)}
     del clip
     torch.cuda.empty_cache()

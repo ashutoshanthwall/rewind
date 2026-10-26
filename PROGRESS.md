@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · 5.1: sanity (3) failed, no bug found; Ashutosh: run the dev gate → dev embedding running
+Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing
 
 ---
 
@@ -1825,6 +1825,40 @@ counted as answered: it was meant to catch implementation bugs, and debugging fo
 departure from the pre-registered "stop and report" clause, recorded here before the dev run. Nothing else changes:
 same candidates, windows, queries, metrics and paired rule as pre-registered. Caveat for the record: check (3) only
 probed vehicle prompts; the action-qtype queries were not covered by it.
+
+## Step 5.1 — GATE 5.1: ADOPT LanguageBind (pre-registered rule, Mon 26 Oct, ~12:20)
+
+- Dev embedding: `scripts.embed_action --split dev`, 42 clips / 3.50 h → **6,256 windows in 21.6 min** (4.8 windows/s
+  end to end, 5.9 model only, peak VRAM 1,449 MiB); outputs checked: fp16, 768-d, finite, unit norm, one settings
+  hash `c755729736ca4da5`, windows = `window_starts()`. Query texts: `--encode-queries dev`.
+- Bake-off: `uv run python -m scripts.action_bakeoff --model LanguageBind_Video_V1.5_FT`, report
+  `results/reports/action_5.1.md`, 2 experiments rows. **Honest note:** the rows carry git `08bee44-dirty`. The
+  uncommitted diff was only a new check in `action_bakeoff.TextLookup` (text vectors must have the window vectors'
+  settings hash; it passed), committed right after. The run is deterministic.
+
+  | 13 dev queries (5 category, 8 specific) | (a) mean-pooled CLIP | (b) LanguageBind |
+  |---|---|---|
+  | specific median s watched | 6,902 | 6,948 |
+  | specific mean s | 6,905 | 6,831 |
+  | specific R@10 | 0.000 | 0.375 |
+  | category mAP@10 / mAP@50 | 0.018 / 0.034 | 0.279 / 0.102 |
+  | by qtype, specific R@10 (n = 4 each): action / vehicle_event | 0 / 0 | 0.50 / 0.25 |
+
+- **Paired rule (`gate.py`, as pre-registered): wins / ties / losses 7 / 3 / 3**. Specific mean diff +74 s, CI
+  [−4,750, +4,890] (n = 8). Category AP@50 mean diff +0.068, CI [−0.038, +0.177] (n = 5). Mean better in both
+  families → **adopt = True. The rule decides by construction, so no stop was needed.**
+- **Decision: action branch kept with `LanguageBind_Video_V1.5_FT`** (`action.enabled: true`). Honest reading:
+  - Both CIs include 0. On specific queries the two are tied in substance: 3 of 8 are misses for both, and
+    medians are 6,902 vs 6,948 s.
+  - The gain is mainly at the top of the list (R@10 0 → 0.375; category mAP@10 0.018 → 0.279) and on the two
+    vehicle category queries (AP@50 0.009 / 0.001 → 0.188 / 0.231).
+  - It lost the person_puts_down_object category query (0.127 → 0.000) and the IR action query.
+  - Dev is small (13 queries), so this is a noisy decision, recorded as such.
+- Sanity check (3) had failed on tuning ("a vehicle stops" AUC 0.48). On dev the vehicle-stop category query went the
+  other way (AP@50 0.001 → 0.231). The two tests measure different things (window-level AUC on 2 busy clips vs.
+  ranked clips across the split), so neither result overrides the other.
+- **Note for step 7.1: LanguageBind vectors are 768-d** (appearance 512-d). The engine must take the dimension per
+  named index from the data or config, not as a constant. Step 7.4 fusion weight for `action` is still TBD (tuning).
 
 ---
 
