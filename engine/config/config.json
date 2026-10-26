@@ -1,0 +1,54 @@
+{
+  "model": {
+    "name": "ViT-B-32",
+    "pretrained": "openai",
+    "embedding_dim": 512,
+    "context_length": 77
+  },
+  "preprocess": {
+    "image_size": 224,
+    "mean": [0.48145466, 0.4578275, 0.40821073],
+    "std": [0.26862954, 0.26130258, 0.27577711]
+  },
+  "paths": {
+    "raw_dir": "data/raw/flickr30k",
+    "images_dir": "data/raw/flickr30k/flickr30k-images",
+    "annotations_csv": "data/raw/flickr30k/flickr_annotations_30k.csv",
+    "metadata": "data/processed/metadata.json",
+    "exclusion_report": "data/processed/exclusion_report.csv",
+    "embeddings": "data/embeddings/image_embeddings.bin",
+    "manifest": "data/embeddings/manifest.json",
+    "index": "data/index/hnsw.idx",
+    "queries": "evaluation/queries.txt",
+    "query_ground_truth": "evaluation/query_ground_truth.csv",
+    "query_embeddings": "evaluation/query_embeddings.bin",
+    "query_manifest": "evaluation/query_manifest.json",
+    "benchmark_results": "evaluation/benchmark_results",
+    "text_encoder_server": "scripts/text_encoder_server.py",
+    "python": ".venv/bin/python"
+  },
+  "embedding": {
+    "batch_size": 128,
+    "num_workers": 6,
+    "checkpoint_every_batches": 10,
+    "norm_tolerance": 1e-5,
+    "seed": 1234
+  },
+  "hnsw": {
+    "M": 16,
+    "ef_construction": 200,
+    "ef_search": 80,
+    "seed": 42,
+    "select_heuristic": true,
+    "keep_pruned_connections": true,
+    "protect_last_in_edge": true
+  },
+  "evaluation": {
+    "seed": 2024,
+    "num_heldout_queries": 1000,
+    "heldout_caption_index": 0,
+    "warmup_queries": 20,
+    "repetitions": 5,
+    "ef_search_sweep": [20, 40, 80, 120]
+  }
+}
