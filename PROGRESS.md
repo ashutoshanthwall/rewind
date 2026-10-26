@@ -1583,8 +1583,6 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   warnings; `ctest` 1/1 passed (`sir_tests`; the two checks that need Flickr data / its venv skip themselves).
 - **For step 7.1:** its tests use a small home-made harness (`tests/tests.h`), not GoogleTest as CLAUDE.md 7.1 says;
   the engine has a Python text-encoder subprocess (`src/text_encoder.cpp`) that Rewind replaces with pybind11.
-  `dsa/README.md` splits the DSA files among "Members 1–4" (all upstream commits are by ashutoshanthwall): if
-  teammates wrote any of it, the README must credit them (👤 Ashutosh to confirm).
 
 ---
 
