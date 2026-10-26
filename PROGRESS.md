@@ -1688,6 +1688,83 @@ Additions:
 - **For step 7.1:** its tests use a small home-made harness (`tests/tests.h`), not GoogleTest as CLAUDE.md 7.1 says;
   the engine has a Python text-encoder subprocess (`src/text_encoder.cpp`) that Rewind replaces with pybind11.
 
+## Step 5.1 — PRE-REGISTRATION (Mon 26 Oct, written and committed before any 5.1 result)
+
+Scope trimmed by Ashutosh (Mon 26 Oct). Everything below is fixed **before** any window vector, query score or
+metric of step 5.1 is computed. No post-hoc reinterpretation (rule above).
+
+**Candidates (two, not three)**
+- **(a) Mean-pooled CLIP, the simple variant.** Built from the existing step 4.2 appearance vectors
+  (ViT-B-16 / `laion2b_s34b_b88k`, frame view `pad` = letterboxed whole frame, raw, no centering: the Gate 4.4
+  config). No new embedding run. Window vector = mean of the 1 fps vectors at the sample times inside the window
+  (4 per 4 s window), L2-normalised again. A sample time whose frame dedup dropped (step 4.1) takes the vector of
+  the last kept frame at or before it: dedup judged that frame essentially unchanged, and the max gap of 10 s
+  guarantees one exists. **Recorded approximation:** 4 frames at 1 fps (some carried forward), not the 8 frames
+  every 0.5 s that (b) sees. So (a) sees less motion detail than a true 8-frame mean-pooled CLIP would. This makes
+  the bar slightly easier for (b) to clear, not harder.
+- **(b) LanguageBind-Video, the complex variant.** Checkpoint **`LanguageBind/LanguageBind_Video_V1.5_FT`**
+  (ViT-L/14, 8 frames, temporal attention per layer, then frame averaging; **projection dim 768**; MIT code and
+  weights, training data VIDAL-10M CC-BY-NC-4.0 to be cited; zero-shot MSR-VTT R@1 42.8 per the paper). Chosen
+  over `LanguageBind_Video` (LoRA: needs peft), `_FT` (older) and `Huge_V1.5_FT` (H/14, 1024-d, 4.8 GB fp32: tight
+  on 6 GB for +2 R@1 on web video). Sources: HF config.json and the repo (research notes from this session).
+  VERIFY on load: projection dim and num_frames from the downloaded config.
+  - Input: 8 frames per window at s, s + 0.5, ..., s + 3.5 s (decoded frame round(t * fps)). Each frame becomes
+    the **same `pad` view as (a)**: whole frame letterboxed into a square (no centre crop: it lost 28 % of tuning
+    events, open-issue item 4), resized to 224 (bicubic, antialias) and normalised with the OpenAI CLIP mean/std
+    (LanguageBind's own constants). LanguageBind's own transform is **not** used: it centre-crops and applies a
+    random horizontal flip at inference (`processing_video.py`, decord branch). Honest caveat: the model was
+    trained on centre crops, and letterboxed frames are a domain shift for it. Both candidates get the same view,
+    so the comparison is between the models, not the crops.
+  - fp16 inference. Embeddings L2-normalised by us (`get_image_features` / `get_text_features` are not normalised).
+  - Text: the query text verbatim, CLIP tokenizer, max 77 tokens. No prompt templates for either candidate.
+- **X-CLIP dropped (Ashutosh).** Reason: it is Kinetics-400 trained (a narrow action vocabulary, human-centred
+  clips) and must be cut down to plain text embeddings to stay a dual encoder (its full forward conditions the text
+  on the video). That removes the part of the model that made it strong, so it is unlikely to beat (a), and the
+  1-hour setup is better spent on one serious candidate.
+
+**Windows (identical for both)**: `rewind/embed/windows.py`. Per clip, [s, s + 4) for s = 0, 2, 4, ... while
+s + 4 ≤ duration (action.window_s 4, stride_s 2). A window's search time is its centre s + 2. All 42 dev clips
+(3.50 h, 6 cameras incl. IR G474). Deviation from CLAUDE.md "~2 h of dev footage": dev ground truth is split-wide,
+so a subset would score correct answers outside it as misses.
+
+**Search**: the top `search.k_per_index` (200) windows by cosine → clips with `rewind/search/core.py` unchanged
+(merge 5 s, cap 60 s, mean top-3, ±5 s context). Specific queries search every camera; category queries search RGB
+windows only (as at 4.4). NumPy brute force.
+
+**Queries**: frozen dev queries with qtype `action` or `vehicle_event`: 5 category (c01–c05) + 8 specific
+(s05–s12) = **13**. Appearance-qtype queries are not used.
+
+**Reported**: per candidate, median and mean seconds watched, R@1/5/10 (specific), mAP@10/50 (category); per-query
+table with the better candidate; wins / ties / losses; the paired bootstrap 95 % CI of the mean difference per
+family (specific seconds, category AP@50). Cost: (b) peak VRAM (`torch.cuda.max_memory_allocated`) and windows/s
+(end to end incl. decoding, and model only). (a) has no new GPU run; its cost is the step 4.2 run (shared with the
+appearance branch) plus CPU pooling.
+
+**Decision rule (GATE 5.1)**: `rewind/eval/gate.py` `paired_decision(simple=(a), complex=(b))` **as written**
+(specific queries by seconds watched with a miss in both = tie; category by AP@50; adopt (b) only if the mean is
+better (specific better and category not worse, or the reverse) AND wins > losses). The rule always returns
+adopt / not adopt, so it decides by construction; there is no near-tie clause.
+- adopt → `action.enabled: true`, `action.model: LanguageBind_Video_V1.5_FT`, then step 5.2 (full indexing).
+- not adopt → **drop the action branch** (`action.enabled: false`). Mean-pooled CLIP is the bar, not a branch
+  (CLAUDE.md 1.7). Phase 5 ends.
+
+**Stop conditions (no gate result computed)**
+- Setup timebox: **1 hour**, from install approval to the first correct 8-frame embedding. Install or load failure,
+  or no fit in 6 GB VRAM (out of memory at batch size 1 window), means LanguageBind is dropped, so the action
+  branch is dropped. Record it and stop the phase.
+- **Implementation sanity check, before any dev query is scored** (GitHub issue #51 reports that FT checkpoints
+  gave bad results for one user; UNVERIFIED): (1) the weights load with `strict=True` (no missing or unexpected
+  keys); (2) fp16 vs fp32 window embeddings agree (cosine ≥ 0.99 on 16 tuning windows); (3) on 2 tuning clips with
+  vehicle activity, the AUC of "a vehicle starts moving" / "a vehicle stops" prompts at telling windows that overlap
+  an annotated `vehicle_starts` / `vehicle_stops` from those that don't, shown next to (a)'s AUC. Tuning only, for
+  information. If (1) or (2) fails, or (3) is ≤ 0.55 for (b), treat it as an implementation bug: debug it within
+  the timebox, never swap models silently. If it is not fixed, stop and report to Ashutosh.
+
+**If adopted (step 5.2)**: `scripts/embed_action.py` resumable over all clips (dev clips reused, same settings
+hash), test on 10 min, then a background run with log and PID under `results/logs/`. **Note for step 7.1:**
+LanguageBind vectors are **768-d** (appearance is 512-d), so the engine must take the vector dimension per named
+index from the data or the config, not as a constant.
+
 ---
 
 ## Later (deferred, not in current scope)
