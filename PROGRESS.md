@@ -1588,6 +1588,18 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   `store.py`; no label or test-split access. Note: IR G474 has few crops (15k vectors, 9.7k of them frame views):
   detector recall on IR is low (Gate 3.3), so IR queries rely mostly on whole-frame views.
 
+## Step 4.3 — Mean-centering: DONE (Mon 26 Oct, 10:38)
+
+- `scripts.collect_appearance` (9 s, 3.1 GB RAM): `…/index/vectors.npy` (raw, 456,293 × 512 fp16, vector_id = row),
+  `meta.parquet`, `camera_means.parquet` (36 rows = 2 frame modes × 3 crop sources × 6 cameras, all footage, no
+  labels), and the centered main variant `centered_tiles2_detection_then_motion.npy` (284,780 rows) + ids. **0.72 GiB.**
+  Both variants (raw, centered) exist for the 4.4 ablation; other variants are centered at load time from the means.
+- **Checked independently** (scratch script): ids sequential; G330 / G474 means recomputed from the raw vectors match
+  exactly (max diff 0.0); centered norms 0.9999–1.0001; main variant = tile0/tile1 + ≤ 4 crops per frame.
+- **What centering does** (3,000 random same-camera frame-view pairs per camera): raw cosine mean 0.85–0.92, sd
+  0.04–0.08 (background dominates) → centered mean 0.28–0.76, sd 0.12–0.28. Whether this helps retrieval is decided
+  at Gate 4.4, not here.
+
 ## Pre-agreed decision rules (Ashutosh, Mon 26 Oct) — apply without asking (CLAUDE.md rule 16)
 
 - **Tie-break:** when two variants have equal complexity and the gate rule does not decide, choose the better mean on
