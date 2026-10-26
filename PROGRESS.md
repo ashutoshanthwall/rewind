@@ -2075,6 +2075,75 @@ cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (lapto
   | ByteTrack tracker | `rewind/track/bytetrack_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2021 Yifu Zhang | github.com/FoundationVision/ByteTrack @ `d1bf019`; Zhang et al., ECCV 2022. Used at step 6.1; the event branch was dropped at Gate 6.2 |
   | scipy | pip dependency (step 6.1) | BSD-3-Clause (VERIFY at 10.1) | 1.17.1 |
 
+## Step 7.1 — engine inspection (read-only; Mon 26 Oct ~13:20, while 5.2 runs; nothing compiled or changed)
+
+Source: `engine/` (upstream `6f84dcb`, unmodified; build verified earlier: 6 targets, no warnings, `ctest` 1/1).
+
+**Build.** CMake >= 3.20, C++20, single-config Release by default with `-O3 -march=native -DNDEBUG` (forced into the
+cache; benchmarks rely on it). `sir_core` static library = every `src/*.cpp` + `dsa/*.cpp` (GLOB); 4 apps
+(`sir_cli`, `sir_benchmark`, `sir_build_index`, `sir_gate`); one test program `sir_tests` registered with ctest.
+Warnings `-Wall -Wextra`. No pybind11, no install target, no third-party libraries (everything incl. JSON, SHA-256,
+MT19937-64, arrays, heaps is hand-written). `-march=native` means a binary is not portable to another CPU (fine:
+built on the machine that runs it; README must say "build locally").
+
+**Real API (what Rewind will use).**
+- `EmbeddingStore` (`data.h`): owns one row-major **float32** block `[rows x dim]`; **row i = id i**. Two ways in:
+  `load(binPath, manifestPath, expectedDim, expectedModel, normTolerance)` (raw little-endian float32 file + JSON
+  manifest: model, dim, rows, `l2_normalized`, dtype `"float32"` only, sha256 — all checked, then every row) or
+  `setData(dim, FloatArray, normTolerance, sha256 = "")` (copies element by element from a `FloatArray`).
+  `validate` rejects NaN/Inf/zero norm and **|norm − 1| > normTolerance (1e-5 in config)**.
+- `RetrievalIndex` interface: `insert(id, embedding)`, `search(query, queryDim, k, CandidateArray& out)` → results
+  best first as `{int id, float score}`, score = dot (`1 − dist`), ties by ascending id. `BruteForceIndex` (exact,
+  `insertAll()`, O(N log k) with a TopK heap) and `HNSWIndex` (`setup(store, HnswParams)`, `insert`, `search`,
+  `setEfSearch`; ef = max(efSearch, k); `IndexManager::build` inserts rows 0..N−1 in order).
+- `IndexManager::save / load / validate / rebuild`: binary format v2 = header (magic, version, model, dim, store rows,
+  nodes, M/efC/efS, seed, flags, **SHA-256 of the embedding file**, entry/maxLevel, RNG state) + per-node layers +
+  SHA-256 checksum. Load rejects corruption and a stale header (model, dim, rows, embedding hash). Only the graph is
+  saved; vectors live in the separate `.bin`. `save` refuses a store without a source SHA-256 (so `setData` callers
+  must pass one). Nodes may be absent (level −1), so a partial graph is representable.
+- `SearchEngine` + `QueryEncoder` / `TextEncoderProcess`: Flickr-specific text → caption-metadata path through a
+  Python subprocess. **Not needed:** Rewind embeds text in Python and passes vectors (pybind11, step 7.3).
+- `HnswParams` defaults: M 16, efConstruction 200, efSearch 80, seed 42, heuristic selection, keep pruned, protect
+  last in-edge (config `engine/config/config.json`, Flickr paths and `ViT-B-32/openai`, `embedding_dim 512`).
+
+**Data layout / hardcoded assumptions (what 7.1 must change or work around).**
+- **Vector size is NOT a compile-time constant**: dim comes from the store (`store.dim()`), the HNSW reads
+  `firstRow + id * dims`, the index header stores dim. The only 512 is `config.json`'s `embedding_dim` (the apps'
+  expected dim). So 512-d appearance and 768-d action indexes are possible as separate stores/indexes.
+- **float32 only** (`dtype` must be `"float32"`); our vectors are fp16 `.npy` → convert to float32 and
+  **re-normalise in float32** before handing them over (fp16 rounding gives |norm − 1| ~1e-3, which the 1e-5 check
+  rejects; `check_action_pass` allows 2e-3).
+- **ids = row indices 0..N−1, int** — no external ids and no metadata: our int64 vector_id ↔ (video, t_s, type, box)
+  mapping must be kept by the caller (Python metadata parquet) or added (7.1: "int64 ids mapped to metadata").
+- **No filtering** (camera / time range): to be added in 7.1 (options: over-fetch + post-filter, per-camera indexes,
+  or a filter predicate inside `searchLayer`; decide in 7.1 and test against filtered brute force).
+- **No named indexes**: one store + one index per process/app; 7.1 adds "multiple named indexes".
+- **32-bit int sizes — overflow risk for 7.2:** `EmbeddingStore::load` allocates `new float[m.rows * m.dim]` with an
+  **int** multiply (overflows past 2^31 floats ≈ 4.19 M rows at 512-d, 2.8 M at 768-d); `FloatArray`/`IntArray`
+  sizes and `setData`'s loop index are `int`. Real sizes are far below (appearance 175,039 x 512 = 89.6 M floats;
+  action ~44.7 k x 768), but the **synthetic 5 M benchmark (step 7.2) would overflow** → fix to `long long` first
+  (and 5 M x 512 float32 = 10.2 GB, close to the 16 GB RAM limit anyway).
+- **Not thread-safe:** `HNSWIndex::search` reuses a mutable visited-epoch array. FastAPI must serialise calls to
+  one index (a lock), or keep one index per worker.
+- `dot()` is a plain scalar loop in one `.cpp` so every distance is bit-identical (strict FP: no reassociation, so
+  `-O3` does not vectorise the sum). Fine at our sizes; a speed lever only if 7.2 needs it.
+- Memory: the store holds float32 vectors (appearance ≈ 358 MB, action ≈ 137 MB); graph per node `IntArray` per layer.
+
+**Test harness.** Home-made (`tests/tests.h`: `check(cond, msg)`; `test_main.cpp` runs 16 named test functions, catches
+exceptions per test, prints failures, exits 1 on any failure). Tests use `randomUnitVectors(n, d, seed)` and
+`setData`; HNSW tests cover graph invariants, exactness at efSearch = N, recall growth over an ef sweep on 5,000
+random vectors (>= 0.99 at ef 120), determinism, level distribution, bad-argument rejection; persistence tests cover
+save/load round trip and corruption. Two tests skip themselves without Flickr data / the Python venv. **CLAUDE.md 7.1
+asks for GoogleTest:** recommendation — keep the existing harness (no new dependency, already wired into ctest, same
+style for new tests) unless Ashutosh prefers GoogleTest (a new dependency → ask, rule 6).
+
+**Not used by Rewind:** `dsa/member1_inverted_index.cpp` (caption hash table / inverted index), `sir_cli`,
+`sir_gate`, `sir_benchmark` (Flickr protocol; its timing helpers `timeQueries`, `recallAtK`, `collectSystemInfo` are
+reusable for 7.2), `src/text_encoder.cpp`.
+
+**Open questions for 7.1 (decide there):** filter strategy; whether ids stay row indices with a Python-side map
+(simplest) or become int64 inside the engine; GoogleTest vs existing harness.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
@@ -2085,8 +2154,13 @@ cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (lapto
   jitters when a passing vehicle occludes them** (false stops/starts), and 2 were small distant cars (possibly real,
   unlabelled stop-and-go). Result: best tuning P/R 0.574/0.444 (stops) and 0.517/0.437 (starts), chance level
   (+30 s shift) ~0.15–0.19; no grid setting reaches 0.5/0.5 → branch dropped at Gate 6.2. Evidence:
-  `results/reports/events_6.1.md`, `events_6.1_grid.csv`, `events_6.1_dev.md`; the coverage diagnostic was a scratch
-  script (tuning only; numbers in "Step 6.1" above) — re-create it in `scripts/` if the report needs it reproducible.
+  `results/reports/events_6.1.md`, `events_6.1_grid.csv`, `events_6.1_dev.md`; coverage numbers:
+  **`scripts/event_coverage.py`** → `results/reports/events_6.1_coverage.md` (tuning only; thresholds in
+  `events.coverage_check`; toy tests in `tests/test_event_coverage.py`). It reproduces the first (scratch) run: 701
+  labels, 87 % tracked, fires near 54 % of tracked / 13 % of untracked, same size bins. One deliberate difference:
+  "fires nearby" now uses strict positive overlap like `match_events` (the scratch used inclusive ends); only G340
+  stops changed (47 % → 43 %). The report's git hash is `d5e443d-dirty` because the then-uncommitted
+  `scripts/check_action_pass.py` (step 5.2) was in the tree; the coverage code ran as committed in `d5e443d`.
 
 ---
 
