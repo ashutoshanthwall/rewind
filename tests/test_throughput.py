@@ -103,3 +103,15 @@ def test_history_reads_old_and_new_metric_names(tmp_path):
          "decode_ir_keep_5fps_max640_x_realtime": None, "clip_img_per_s": 299.0},  # old IR 5 fps not comparable
         {"timestamp": "t2", "git": "bbbbbbb", "decode_rgb_keep_5fps_max640_x_realtime": 20.0,
          "decode_ir_keep_5fps_max640_x_realtime": 273.0, "clip_img_per_s": 303.0}]
+
+
+def test_frames_at_yields_exactly_the_wanted_frames(tmp_path):
+    from rewind.video import frames_at
+    path = tmp_path / "g.avi"
+    gray_avi(path, 20)
+    got = [(i, round(float(a.mean()) / 12), a.shape) for i, a in frames_at(path, 20, {13, 0, 7})]
+    assert got == [(0, 0, (48, 64, 3)), (7, 7, (48, 64, 3)), (13, 13, (48, 64, 3))]   # gray level 12*i -> index i
+    with pytest.raises(ValueError, match="outside"):
+        list(frames_at(path, 20, {20}))
+    with pytest.raises(ValueError, match="decoded 20 frames, manifest says 21"):
+        list(frames_at(path, 21, {1}))

@@ -58,7 +58,7 @@ class WindowIndex:
         return group_hits(rows[idx], sc, self.meta["video_id"].to_numpy(), self.meta["t_s"].to_numpy(),
                           self.durations, cfg)
 
-    def ranked(self, q: np.ndarray, cfg: SearchConfig, rgb_only: bool) -> list:
+    def ranked(self, q: np.ndarray, cfg: SearchConfig, rgb_only: bool, query: dict | None = None) -> list:
         return [c.span(self.by_id[c.video_id]) for c in self.search(q, cfg, rgb_only)]
 
 

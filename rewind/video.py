@@ -43,3 +43,21 @@ def sampled_frames(path: Path, n_frames: int, step: int, max_width: int,
                 yield n - 1, frame.to_ndarray(format="bgr24", width=width, height=height)
     if n != n_frames:
         raise ValueError(f"{path.name}: decoded {n} frames, manifest says {n_frames}")
+
+
+def frames_at(path: Path, n_frames: int, wanted: set[int], thread_type: str = "AUTO") -> Iterator[tuple[int, np.ndarray]]:
+    """Decode every frame sequentially (the manifest's frame-index rule) and yield (index, full-size BGR uint8 array)
+    only for the wanted frame indices, in order. Raises if a wanted index is outside the clip or the decoded frame
+    count differs from n_frames."""
+    bad = [f for f in wanted if not 0 <= f < n_frames]
+    if bad:
+        raise ValueError(f"{Path(path).name}: wanted frames outside 0..{n_frames - 1}: {sorted(bad)[:5]}")
+    with av.open(str(path)) as container:
+        stream = container.streams.video[0]
+        stream.thread_type = thread_type
+        n = 0
+        for n, frame in enumerate(container.decode(stream), start=1):
+            if n - 1 in wanted:
+                yield n - 1, frame.to_ndarray(format="bgr24")
+    if n != n_frames:
+        raise ValueError(f"{Path(path).name}: decoded {n} frames, manifest says {n_frames}")

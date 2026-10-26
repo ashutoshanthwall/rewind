@@ -81,7 +81,8 @@ class Index:
         return group_hits(rows[idx], sc, self.meta["video_id"].to_numpy(), self.meta["t_s"].to_numpy(),
                           self.durations, cfg)
 
-    def ranked(self, q: np.ndarray, cfg: SearchConfig, rgb_only: bool) -> list[Span]:
+    def ranked(self, q: np.ndarray, cfg: SearchConfig, rgb_only: bool, query: dict | None = None) -> list[Span]:
+        """query: the frozen query row (unused here; rankers that read the text, e.g. step 6.2's, need it)."""
         return [c.span(self.by_id[c.video_id]) for c in self.search(q, cfg, rgb_only)]
 
 
@@ -95,7 +96,7 @@ def split_videos(conn, split: str) -> list:
 def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: SearchConfig,
                qtypes: tuple | None = None) -> list[dict]:
     """The frozen queries of a split (only these qtypes, if given), scored like the baselines. index: anything with
-    footage_s and ranked(); clip: anything with encode_text()."""
+    footage_s and ranked(q, cfg, rgb_only, query=<query row>); clip: anything with encode_text()."""
     m = cfg["metrics"]
     out = []
     for q in load_queries(QUERIES_DIR, split):
@@ -105,15 +106,15 @@ def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: Sear
         z = clip.encode_text([q["query"]])[0]
         if q["kind"] == "specific":
             gt = Span(q["camera_id"], datetime.fromisoformat(q["start_time"]), datetime.fromisoformat(q["end_time"]))
-            ranked = index.ranked(z, scfg, rgb_only=False)
+            ranked = index.ranked(z, scfg, rgb_only=False, query=q)
             rank = first_hit(ranked, gt)
             out.append(base | specific_metrics([ranked], gt, index.footage_s, m["recall_k"])
                        | {"hit": rank is not None, "hit_rank": -1 if rank is None else rank + 1,
                           "n_clips": len(ranked)})
         else:
             inst, dont_care = category_truth(conn, split, q["activity_type"])
-            out.append(base | {"instances": len(inst)} | category_metrics([index.ranked(z, scfg, rgb_only=True)],
-                                                                         inst, dont_care, m["category_k"]))
+            ranked = index.ranked(z, scfg, rgb_only=True, query=q)
+            out.append(base | {"instances": len(inst)} | category_metrics([ranked], inst, dont_care, m["category_k"]))
     return out
 
 
