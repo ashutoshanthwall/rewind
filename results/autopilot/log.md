@@ -20,3 +20,6 @@
   ~250 clips, est. ~1 h single model); then `scripts.collect_appearance` (4.3) and
   `scripts.appearance_search --ablation` (4.4, Gate 4.4 by the pre-registered rule).
 - Weights downloaded so far: 0 GB of 5 GB (all three CLIP tags were already cached).
+
+## 2026-10-26 01:22 — runner stopped
+- NEEDS_USER at step 4.2: Pretrained tag is a near-tie under the agreed rule (results/reports/pretrained_4.2.md): laion2b_s34b_b88k has the best mean AP@50 over 29 templated tuning types (0.105 vs datacomp_xl 0.094, openai 0.080) but wins only 12 types vs 16 losses against datacomp_xl (mean diff +0.012, CI [-0.009, +0.035]). Question: which tag? Options: (a) laion2b_s34b_b88k (best mean; much better on vehicle start/stop), (b) datacomp_xl_s13b_b90k (wins more types; better on door/phone types and the 3 tuning category queries), (c) a tie-break rule of your choice. Record the answer in PROGRESS.md. Also: setsid and & are denied in headless runs, so long jobs ran via the harness background runner instead of AUTOPILOT.md 6 (see log.md).

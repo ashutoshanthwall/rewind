@@ -1531,6 +1531,52 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
 
 ---
 
+## Autopilot retired (Mon 26 Oct, ~09:50) — back to interactive sessions
+
+- **Ashutosh's instruction:** the autopilot is retired; work continues interactively. `AUTOPILOT.md`,
+  `scripts/autopilot.sh` and `results/autopilot/` stay in the repo for reference only. CLAUDE.md (incl. rule 16) is
+  the only rule set again.
+- It made **one** run (run 1, 00:30 → 01:22, 190 turns, ~$11.1, 10 permission denials) covering step 4.1 and step 4.2
+  up to the tag check, then stopped at `NEEDS_USER` (pretrained tag near-tie).
+- **Check of every long job it started** (transcript `results/autopilot/run_1.log` searched for every background
+  launch; logs, PID files, outputs and experiments rows checked):
+
+  | job | log | outputs | status |
+  |---|---|---|---|
+  | `scripts.dedup_sweep` (4.1, launched twice; the 2nd overwrote the 1st) | `dedup_sweep.log` ends with `choice: … 1.0` | `dedup_4.1.md`, 8 rows at `bcecd4f` | complete |
+  | `scripts.check_crop_ranking` (4.2, 2 logged runs + 1 `--no-log` render) | both logs end with the decision line | `crops_4.2.md`, rows at `bcecd4f` (superseded) and `7761279` | complete |
+  | `scripts.embed_appearance --tuning-only`, 3 tags | `embed_tagcheck.log`: 58/58, `done: … 102112 vectors`; PID dead | per tag: 58/58 `.npy` + `.parquet` + `.done.json`, rows = vectors, fp16, finite, unit norm (max dev ≤ 2e-3), settings hash = current config's (laion2b `db5765f2a902ab59`); 102,112 vectors, 10,974 kept, 17,436 candidates per tag; no stray/partial files | complete |
+  | `scripts.appearance_search --tag-check` | `tag_check.log` ends `DECISION: NEAR_TIE` | `pretrained_4.2.md`, 6 rows at `7d34b10` | complete |
+
+  The three `setsid nohup … &` launch attempts were denied (never executed); the 4th (harness background runner)
+  is the one that ran. No orphan processes (all PID files point to dead processes). **Nothing needs re-running.**
+  (The Phase 3 `index_pass` predates the autopilot and was checked on 25 Oct.)
+
+## Step 4.2 — pretrained tag DECIDED: `laion2b_s34b_b88k` (Ashutosh, Mon 26 Oct)
+
+- Evidence (`results/reports/pretrained_4.2.md`, 6 experiments rows at `7d34b10`; tuning, 29 templated Kitware types,
+  tiles2 + detection_then_motion, mean-centered): type mAP@50 **laion2b 0.105**, datacomp_xl 0.094, openai 0.080.
+  laion2b vs datacomp_xl: 12 wins / 1 tie / 16 losses, mean diff +0.012, 95 % CI [−0.009, +0.035] → the agreed rule
+  did not decide (near-tie). vs openai: 17/0/12, +0.025 [+0.008, +0.046]. laion2b is clearly better on
+  vehicle_starts / vehicle_stops (AP@50 0.35 / 0.41 vs 0.19 / 0.20).
+- **Decision: laion2b_s34b_b88k** (best mean on the gate's primary metric = the tie-break rule below). Honest caveat:
+  the CI against datacomp_xl includes zero; this is a judgement call, not a measured win.
+- `configs/config.yaml`: `appearance.pretrained: laion2b_s34b_b88k`. The 58 tuning clips already embedded with this
+  tag (same settings hash) are reused by the full run.
+
+## Pre-agreed decision rules (Ashutosh, Mon 26 Oct) — apply without asking (CLAUDE.md rule 16)
+
+- **Tie-break:** when two variants have equal complexity and the gate rule does not decide, choose the better mean on
+  the gate's primary metric, and record in PROGRESS.md that the tie-break was used.
+- **Gate 6.2 (event branch):** keep the event branch only if, on **tuning** with **Kitware RGB** labels, event-rule
+  **precision ≥ 0.5 and recall ≥ 0.5**, **AND** the confirmed gate rule (`rewind/eval/gate.py`) passes on **dev
+  `vehicle_event`** queries (event branch on vs off). Otherwise drop it. The Wed 28 Oct 13:00 hard stop still applies.
+- **Step 7.4 (fusion weights):** choose the weights that **maximise mean Recall@10 on tuning specific-event
+  queries**; ties broken by **lower median seconds-watched**; grid **{0, 0.25, 0.5, 1, 2}** per non-appearance branch
+  (appearance fixed at 1.0).
+
+---
+
 ## Later (deferred, not in current scope)
 
 - **SigLIP ViT-B/16 (`webli`) as the appearance encoder.** On open_clip's published retrieval table it beats every

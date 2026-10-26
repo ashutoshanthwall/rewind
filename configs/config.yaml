@@ -145,7 +145,7 @@ detection_check:
   size_edges: [0.05, 0.15]          # box height / frame height buckets
 appearance:
   model: ViT-B-16
-  pretrained: TBD                   # exact open_clip tag
+  pretrained: laion2b_s34b_b88k     # exact open_clip tag; step 4.2 tag check, near-tie decided by Ashutosh (PROGRESS.md)
   max_crops_per_frame: 4
   crop_source: detection_then_motion   # detection_then_motion | motion | none
   crop_pad_frac: 0.2
