@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing
+Deadline: Fri 30 Oct 2026 · Current phase: **6 — Tracking + event rules** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing running
 
 ---
 
@@ -1871,6 +1871,86 @@ probed vehicle prompts; the action-qtype queries were not covered by it.
 - Weights license re-checked in the downloaded model card: `license: mit`.
 - **To do when it finishes:** check every clip has `.npy` + `.parquet` + `.done.json` with one settings hash, rows =
   windows, fp16 / 768-d / finite / unit norm, and no `.tmp` files; check the experiments row; record totals here.
+
+## Phase 6 — PRE-REGISTRATION (Mon 26 Oct, ~12:45; written and committed before any track, rule output or metric)
+
+Decided by Ashutosh in planning (Mon 26 Oct): **tracker** = reference ByteTrack vendored (MIT), **scipy** the only new
+dependency (approved); **Gate 6.2 P/R applied per type**; **dev ON/OFF = event clips first**. Everything below is
+fixed now; no post-hoc reinterpretation (rule above). Tuning is free, but the selection rule is fixed here anyway.
+
+**Tracker (step 6.1; reference defaults, not tuned)**
+- Code: `FoundationVision/ByteTrack` (formerly `ifzhang/ByteTrack`) at commit `d1bf019`, `yolox/tracker/`
+  (`byte_tracker.py`, `basetrack.py`, `kalman_filter.py`, `matching.py`), LICENSE MIT (c) 2021 Yifu Zhang. Vendored in
+  `rewind/track/bytetrack_vendor/` with changes listed in its NOTICE.md (numpy 2: `np.float` -> `float`; `lap.lapjv`
+  -> `scipy.optimize.linear_sum_assignment` on the same extended cost matrix `lap` builds for `cost_limit`;
+  `cython_bbox` -> NumPy IoU with the same +1 pixel convention; no torch; boxes in original pixels (no rescale);
+  the global id counter -> one counter per tracker).
+- Settings = the reference demo defaults: `track_thresh 0.5` (new tracks need score > 0.6), `match_thresh 0.8`,
+  `track_buffer 30` at a nominal 30 fps, i.e. lost tracks kept **1 s** (`frame_rate` = `detection.fps` = 5 -> 5
+  frames), `mot20 false`. Second association uses detections with 0.1 < score <= 0.5 (ours start at 0.3).
+- Input: detections of `events.vehicle_classes` (car, truck, bus, motorcycle) pooled **class-agnostically** (YOLOX
+  flips car/truck on one vehicle; a per-class tracker would cut the track there). Track class = majority class.
+- **One tracker per clip, created fresh** (id counter at 0). No state crosses clips or cameras; no appearance
+  features; no re-identification. The stored `track` column is a within-clip index (0..n-1, renumbered by first
+  appearance), documented as never an identity. **No track index reaches SQLite, reports or the UI.**
+- Output rows: frames where the track was matched to a detection, with that **detection's** box and score (not the
+  Kalman box). Run on all 300 clips (indexing, like detection; no labels read).
+
+**Speed and rules (step 6.1)**
+- Per track sample i at time t_i: the track's samples in [t_i - w/2, t_i + w/2] (w = `smooth_s`); speed = distance
+  between the box centres of the first and last of them / their time difference. Undefined (NaN) if that time
+  difference is < w/2. Unit `px_per_s` (original pixels) or `box_h_per_s` (divided by the median box height of those
+  samples, so a distant car is not "slow" just because it is small).
+- Label per sample: moving if speed >= `stop_speed`, stopped if < `stop_speed`, none if undefined. Runs = maximal
+  consecutive samples with one label; a none sample ends a run. Run duration = last time - first time.
+- `vehicle_stops` at the boundary between a moving run of duration >= `min_moving_s` and the stopped run right
+  after it, of duration >= `min_stopped_s`. `vehicle_starts`: the reverse. Detected span = [last sample of the first
+  run, first sample of the second run) (one sample interval); event time = first sample of the second run.
+- Best box of a detected event: the track's highest-score box in [event time - min_moving_s, event time +
+  min_stopped_s] (ties: larger area). Crop = that box padded like appearance crops (`appearance.crop_pad_frac`), saved
+  as a JPEG under `artifacts/event_crops/` (it is also the result thumbnail; CLAUDE.md 1.4 allows thumbnails).
+
+**Matching and evaluation (step 6.1)**
+- `rewind.eval.metrics.match_events` (same camera and type, annotated span widened by `metrics.event_tolerance_s` =
+  2.0 s, one-to-one, greedy by overlap).
+- Ground truth: **Kitware** `vehicle_starts` / `vehicle_stops` (`label_source` kitware-eval or kitware-train) in
+  **tuning** clips that carry Kitware labels (all RGB tuning clips, `empty_37` clips included: their detections
+  count as false positives). Detected events are scored only in those clips. G330 (gym) is included (it should have
+  none). G474 (IR): recall vs contrib labels reported for information only (contrib labels are incomplete).
+- Reported per camera and per type (P, R, F1, counts), pooled per type, plus two **informational** checks that are
+  not part of any rule: (i) a **time-shift control**: every detected span moved +30 s, circular within its clip, to
+  show what dense ~3 s labels give by chance; (ii) **dev held-out** P/R per camera at the frozen setting (tuning P/R
+  is measured on the data it was tuned on, so it is optimistic).
+
+**Tuning grid (tuning split only; 144 settings)**
+- `speed_unit` in {px_per_s, box_h_per_s}; `stop_speed` in {5, 10, 20, 40} px/s or {0.05, 0.1, 0.2, 0.4} box-h/s;
+  `min_stopped_s` in {0.6, 1, 2}; `min_moving_s` in {0.6, 1, 2}; `smooth_s` in {0.6, 1.0}.
+- **Selection:** maximise the mean over the two types of pooled F1 (tuning RGB cameras with Kitware labels); ties ->
+  first in grid order (unit, speed, min_stopped, min_moving, smooth, each ascending as listed). One setting shared by
+  both types. If the chosen value of a numeric parameter is at a grid edge, the grid is extended one step beyond
+  that edge (x2 or /2 for speeds; +1 s or -0.2 s for durations; smooth 0.4 / 1.6) once, and the selection rerun.
+- Config: `events.stop_speed_px_per_s` is replaced by `events.stop_speed` + `events.speed_unit` (+ `smooth_s`,
+  tracker settings, `types`).
+
+**GATE 6.2 — operational form (extends the pre-agreed rule above)**
+- **Part 1 (tuning, per type):** a type passes if its pooled tuning P >= 0.5 **and** R >= 0.5 at the selected
+  setting. `events.types` = the passing types. If none passes, the event branch is dropped (no dev run needed).
+- **Part 2 (dev):** OFF = appearance-only search at the Gate 4.4 config (`scripts.appearance_search.Index`, pad /
+  motion / raw). ON = for a query whose text contains an intent keyword (`events.intent_keywords`, **unchanged from
+  CLAUDE.md 1.9**) of an enabled type: the detected events of the matching enabled type(s) in the split (RGB only for
+  category queries, like appearance), each a hit at its event time scored by cosine(CLIP crop vector, CLIP query
+  vector), top `search.k_per_index`, grouped by `rewind/search/core.group_hits` (same SearchConfig) -> these clips
+  first, then the OFF list. A query without intent gets the OFF list (a tie).
+- Intent matching: lowercase; a keyword matches as a whole word or whole phrase (`\b...\b`); no stemming.
+- Queries: the 6 dev `vehicle_event` queries (dev-c01, dev-c02, dev-s09, dev-s10, dev-s11, dev-s12), scored as in
+  Gates 4.4 / 5.1; decision by `rewind/eval/gate.py` `paired_decision` as written (OFF simple, ON complex). **Keep the
+  event branch iff Part 1 leaves >= 1 type AND Part 2 adopts ON.** Otherwise drop (`events.enabled: false`).
+- **Recorded before any result:** the dev query texts have been read (by Claude, while planning). With the
+  unchanged keyword list, dev-s11 ("A car pulling away on the far road.") matches no keyword ("pulls away" is listed,
+  "pulling away" is not), so it is a tie by construction; the list is **not** edited after reading dev queries. A
+  query whose only intent type is disabled by Part 1 is also a tie.
+- Reported outside the rule: intent matches over all 17 dev queries (false intents on non-vehicle queries).
+- Hard stop Wed 28 Oct 13:00 (CLAUDE.md).
 
 ## Third-party code and licenses (for README credits) — housekeeping (Mon 26 Oct, ~12:30)
 
