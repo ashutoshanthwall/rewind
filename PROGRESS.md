@@ -1665,15 +1665,19 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
 ## Step 8.1 ablation list (dev; CLAUDE.md step 8.1 + additions)
 
 From CLAUDE.md 8.1: appearance-only; + action (if enabled); + events (if enabled); full fusion; crop_source none /
-motion / detection_then_motion; mean-centering on / off; HNSW vs brute force (metrics + latency); all broken down by
-qtype.
+motion / detection_then_motion; HNSW vs brute force (metrics + latency); all broken down by qtype. CLAUDE.md's
+"mean-centering on / off" is replaced by the centering comparison below.
 Additions:
-- **Per-camera-per-type mean-centering (Ashutosh, Mon 26 Oct):** separate per-camera means for frame views and for
-  crops (each vector centered by the mean of its own camera AND type), vs one per-camera mean (step 4.3) vs no
-  centering. Why: at Gate 4.4 centering lost once crops were in (3/2/12 with motion crops), plausibly because one
-  camera mean over frames and crops together suits neither. Needs code before 8.1: means per (camera, type) in
-  `scripts/collect_appearance.py` and a centering mode in `scripts/appearance_search.py`, with a hand-computed test.
-  No labels used. Decided by the paired rule like every other 8.1 comparison (centering mode is the complex side).
+- **Per-camera-per-type mean-centering (Ashutosh, Mon 26 Oct; pre-registered before any 8.1 result):** each vector
+  centered by the mean of its own camera AND type (frame views and crops get separate means), then re-normalised; no
+  labels. Why: at Gate 4.4 centering lost once crops were in (3/2/12 with motion crops), plausibly because one camera
+  mean over frames and crops together suits neither.
+  - **Exactly one comparison:** per-camera-per-type centering (complex) **vs the current config, no centering**
+    (simple), at the config's other values, under the confirmed paired rule (`rewind/eval/gate.py`) as written.
+    Adopt per-type centering only if that rule adopts it.
+  - **Single per-camera centering is not re-tested** (rejected at Gate 4.4).
+  - Needs code before 8.1: means per (camera, type) in `scripts/collect_appearance.py` and the centering mode in
+    `scripts/appearance_search.py`, with a hand-computed test.
 
 ## Engine copied into `engine/` (Mon 26 Oct, before step 7.1)
 
