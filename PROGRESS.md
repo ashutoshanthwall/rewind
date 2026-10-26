@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing running · Gate 6.2: event branch DROPPED (rule, part 1)
+Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1)
 
 ---
 
@@ -1871,6 +1871,40 @@ probed vehicle prompts; the action-qtype queries were not covered by it.
 - Weights license re-checked in the downloaded model card: `license: mit`.
 - **To do when it finishes:** check every clip has `.npy` + `.parquet` + `.done.json` with one settings hash, rows =
   windows, fp16 / 768-d / finite / unit norm, and no `.tmp` files; check the experiments row; record totals here.
+
+## Step 5.2 — full action indexing: DONE and verified (Mon 26 Oct, closed 14:30)
+
+- **Interrupted once by a power cut.** Run 1 (12:11 → 13:49) did 178 of its 258 clips. On battery it could not have
+  finished: the battery holds about 40 Wh, the machine drew about 49 W, and the GPU was capped at about 30 W. So
+  Ashutosh stopped it (`kill`, 13:49) right after clip 178 had been written: 0 `.tmp` files, 220 markers. Run 2
+  (resume on mains, 13:51 → 14:29) skipped the 220 done clips and did the last 80. Same settings hash
+  `c755729736ca4da5` in both runs (the resume refuses other settings).
+- **Verification:** `uv run python -m scripts.check_action_pass` → **PASS: every check**. It checks:
+  - all 300 clips have `.npy` + `.parquet` + `.done.json`, with no `.tmp` files left;
+  - one settings hash;
+  - rows = marker windows = `window_starts()`, and `t_s` = window centre;
+  - video / camera / modality match the manifest;
+  - vectors are fp16, 768-d, finite, with |norm − 1| <= 2e-3.
+
+  | part | clips | windows |
+  |---|---|---|
+  | step 5.1 dev run (reused) | 42 | 6,256 |
+  | 5.2 run 1 (stopped at the power cut) | 178 | 26,519 |
+  | 5.2 run 2 (resume) | 80 | 11,907 |
+  | **total** | **300** | **44,682** |
+
+  25.01 h of video; 66.9 MiB on disk; peak VRAM 1,449 MiB; sum of per-clip wall time 158.3 min. Per camera: G330 51,
+  G336 51, G474 51, G424 50, G340 49, G436 48 clips.
+- **Speed:** 32 s per clip at first. It rose to 45–47 s while the track pass ran, and again in the last ~20 min of
+  run 1, with the GPU at a power cap. Run 2 averaged 28.8 s per clip (5.17 windows/s, 10.4x realtime).
+- **experiments.csv: honest note.** Run 1 was stopped before its end, so it logged **no row**. Run 2's row covers
+  only its 80 clips / 11,907 windows. Its hashes are git `e93bb08-dirty` (only the then-uncommitted
+  `scripts/check_action_pass.py` was untracked) and config `bbd7237…`: the config had changed since `8e37f28` in the
+  `events` section only, and the action settings hash is unchanged. The full-footage totals are the table above.
+- **Count reconciliation:** my mid-run "124 of 258" was wrong. The checker had counted 124 of **300** clips, which
+  includes the 42 dev clips, i.e. 82 of 258 in run 1's own numbering (its log showed ~[79–82/258] then). "95 of 258"
+  was run 1's own counter. The marker times confirm the split 42 / 178 / 80.
+- New: `scripts/check_action_pass.py` (read-only output checker; reusable after any re-run).
 
 ## Phase 6 — PRE-REGISTRATION (Mon 26 Oct, ~12:45; written and committed before any track, rule output or metric)
 
