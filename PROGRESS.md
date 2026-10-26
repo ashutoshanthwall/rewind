@@ -2178,6 +2178,27 @@ reusable for 7.2), `src/text_encoder.cpp`.
 **Open questions for 7.1 (decide there):** filter strategy; whether ids stay row indices with a Python-side map
 (simplest) or become int64 inside the engine; GoogleTest vs existing harness.
 
+**DECIDED by Ashutosh (Mon 26 Oct, ~14:35, before any 7.1 code). Step 7.1 has not started; it starts in a new session.**
+1. **Tests: keep the engine's existing harness** (`tests/tests.h` + `sir_tests` under ctest); **no GoogleTest** (no new
+   dependency). New engine tests follow the same `check(cond, msg)` style. **The deck must drop its GoogleTest
+   claim:** the tech-stack slide (p. 4 of `docs/Rewind_SAARTHI26_Team_Neural_Nexus.pdf`) lists "GoogleTest". It also
+   lists "cpp-httplib", which CLAUDE.md 1.6 already replaced with pybind11 + FastAPI, so fix both when the deck is
+   updated (step 10.x). CLAUDE.md 7.1's "GoogleTest" wording is superseded by this decision.
+2. **Filtering: one HNSW index per camera per branch** (appearance and action; the event branch is dropped, so 6
+   cameras x 2 branches = 12 indexes, each over its own store).
+   - **Camera filter:** search only the selected cameras' indexes. **No camera filter:** search every camera's index
+     and merge. All indexes of a branch use the same model and cosine scores, so they merge by score (ties as in
+     the engine: ascending id).
+   - **Time filter:** oversample inside each camera index (ask for more than k), keep hits inside the time range;
+     if too few remain, **fall back to exact brute force over that camera's time-filtered subset**.
+   - **HNSW search internals are not modified** (no filter predicate in `searchLayer`).
+   - To fix at 7.1 (config, not code): the oversampling factor and the "too few results" threshold
+     (`search.*`, rule 9), with tests against filtered brute force.
+   - Consequences to keep in mind: per-camera indexes are small (appearance ~29 k vectors per camera on average,
+     action ~7.4 k), so HNSW's speed advantage over brute force is smaller per index. Step 7.2 should measure
+     latency at these real per-camera sizes as well as at the merged size. Still open for 7.1: whether ids stay
+     row indices with a Python-side map (simplest) or become int64 inside the engine.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
