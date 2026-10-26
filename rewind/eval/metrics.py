@@ -128,6 +128,24 @@ def match_events(detected: Sequence[Event], annotated: Sequence[Event], toleranc
     return len(used_d)
 
 
+def match_count_us(det: np.ndarray, ann: np.ndarray, tolerance_us: int) -> int:
+    """match_events for ONE camera and ONE type, on integer microseconds (fast enough for grid sweeps).
+    det, ann: (n, 2) int64 [start, end) in microseconds; same rule and tie-breaking as match_events (overlap with the
+    annotated span widened by tolerance_us, largest overlap first, then detected index, then annotated index)."""
+    if len(det) == 0 or len(ann) == 0:
+        return 0
+    lo = np.maximum(det[:, None, 0], ann[None, :, 0] - tolerance_us)
+    hi = np.minimum(det[:, None, 1], ann[None, :, 1] + tolerance_us)
+    i, j = np.nonzero(hi > lo)
+    order = np.lexsort((j, i, -(hi - lo)[i, j]))
+    used_d, used_a = set(), set()
+    for k in order:
+        if i[k] not in used_d and j[k] not in used_a:
+            used_d.add(i[k])
+            used_a.add(j[k])
+    return len(used_d)
+
+
 def precision_recall(detected: Sequence[Event], annotated: Sequence[Event], tolerance_s: float) -> tuple[float, float]:
     """(precision, recall). Raises on an empty side: 0/0 has no honest value. IR (incomplete labels): use recall only."""
     if not detected or not annotated:

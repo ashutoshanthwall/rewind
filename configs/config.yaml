@@ -183,12 +183,36 @@ action:
     min_auc: 0.55                   # (b) at or below this on either prompt = implementation bug
     prompts: {vehicle_starts: a vehicle starts moving, vehicle_stops: a vehicle stops}
 events:
-  enabled: TBD                      # Gate 6.2
-  tracker: bytetrack
-  vehicle_classes: [car, truck, bus, motorcycle]
-  stop_speed_px_per_s: TBD          # tuned on tuning split
-  min_stopped_s: TBD
-  min_moving_s: TBD
+  # Phase 6 (PROGRESS "Phase 6 — PRE-REGISTRATION"; rewind/track/tracks.py, scripts/track_pass.py, scripts/event_sweep.py)
+  enabled: false                    # GATE 6.2 (26 Oct): DROPPED by the pre-registered rule, part 1 (PROGRESS.md)
+  types: []                         # Gate 6.2 part 1: types with tuning P >= 0.5 and R >= 0.5 -> none passed
+                                    # (stops P 0.574 R 0.444; starts P 0.517 R 0.437; no grid setting passed either)
+  tracker: bytetrack                # vendored, rewind/track/bytetrack_vendor (MIT); one tracker per clip
+  bytetrack:                        # reference demo defaults (tools/demo_track.py), not tuned
+    track_thresh: 0.5               # first association; a new track needs score > track_thresh + 0.1
+    match_thresh: 0.8
+    track_buffer: 30                # frames at ByteTrack's nominal 30 fps -> lost tracks kept 1 s at detection.fps
+    mot20: false
+  vehicle_classes: [car, truck, bus, motorcycle]   # pooled class-agnostically (merged at detection.nms_iou)
+  # selected on tuning by the step 6.1 sweep (results/reports/events_6.1.md); kept for the record (branch dropped)
+  speed_unit: box_h_per_s           # px_per_s | box_h_per_s
+  stop_speed: 0.2                   # in speed_unit
+  min_stopped_s: 1.0
+  min_moving_s: 2.0
+  smooth_s: 1.6                     # speed = centre displacement over a centred window of this length (from the
+                                    # one-time edge extension; the chosen value is again at the extended edge)
+  crop_thumb_px: 256                # step 6.2: saved crop JPEG (result thumbnail) scaled down to this side; the
+                                    # vector is computed from the full-resolution crop (appearance.crop_pad_frac)
+  # step 6.1 sweep grid (pre-registered; tuning only)
+  sweep:
+    speed_unit: [px_per_s, box_h_per_s]
+    stop_speed: {px_per_s: [5, 10, 20, 40], box_h_per_s: [0.05, 0.1, 0.2, 0.4]}
+    min_stopped_s: [0.6, 1, 2]
+    min_moving_s: [0.6, 1, 2]
+    smooth_s: [0.6, 1.0]
+    min_p: 0.5                      # Gate 6.2 part 1, per type, pooled over tuning RGB cameras with Kitware labels
+    min_r: 0.5
+    shift_control_s: 30             # informational chance control: detected spans moved by this, circular in the clip
   intent_keywords:
     vehicle_stops: [stop, stops, stopped, stopping, park, parks, parked, parking, pulls over, halts]
     vehicle_starts: [start, starts, starting, drives off, pulls away, leaves, departs]
@@ -196,7 +220,7 @@ search:
   k_per_index: 200
   ef_search: 200                    # must be >= k
   fusion: zscore_weighted
-  weights: {appearance: 1.0, action: TBD, events: TBD}   # tuned on tuning split
+  weights: {appearance: 1.0, action: TBD, events: 0}     # tuned on tuning split; events 0: branch dropped at Gate 6.2
   merge_gap_s: 5
   max_clip_s: 60
   clip_rank: mean_top3

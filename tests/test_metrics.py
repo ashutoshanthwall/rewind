@@ -3,13 +3,14 @@
 import statistics
 from datetime import datetime, timedelta
 
+import numpy as np
 import pytest
 
 from rewind.eval.baselines import (camera_orders, motion_ranked, segment_activity, segments, sequential, shuffled,
                                    witness)
 from rewind.eval.metrics import (Event, Span, average_precision_at_k, bootstrap_ci, drop_dont_care, first_hit,
-                                 instance_recall_at_k, match_events, overlaps, precision_recall, recall_at_k,
-                                 seconds_watched)
+                                 instance_recall_at_k, match_count_us, match_events, overlaps, precision_recall,
+                                 recall_at_k, seconds_watched)
 from rewind.ingest.manifest import Video
 
 T0 = datetime(2018, 3, 11, 10, 0, 0)
@@ -114,6 +115,36 @@ def test_tolerance_is_applied_once():
     assert match_events([Event(sp("A", 55, 56), "vehicle_stops")], ann, 2.0) == 1
     assert match_events([Event(sp("A", 57, 58), "vehicle_stops")], ann, 2.0) == 0
     assert match_events([Event(sp("A", 45, 47.9), "vehicle_stops")], ann, 2.0) == 0
+
+
+def test_match_count_us_hand_case():
+    # microseconds; ann [10, 14) s widened by 2 s -> [8, 16): det [15, 15.2) matches (0.2 s inside);
+    # det [16, 16.2) does not (starts at the widened end); one-to-one: a second det inside [8, 16) finds it taken
+    s = 1_000_000
+    ann = np.array([[10 * s, 14 * s]])
+    assert match_count_us(np.array([[15 * s, 15 * s + 200_000]]), ann, 2 * s) == 1
+    assert match_count_us(np.array([[16 * s, 16 * s + 200_000]]), ann, 2 * s) == 0
+    assert match_count_us(np.array([[11 * s, 12 * s], [12 * s, 13 * s]]), ann, 2 * s) == 1
+    assert match_count_us(np.empty((0, 2), dtype=np.int64), ann, 2 * s) == 0
+
+
+def test_match_count_us_equals_match_events():
+    """Same answer as match_events (datetime version) on random dense one-camera, one-type cases, incl. ties."""
+    rng = np.random.default_rng(5)
+    for _ in range(300):
+        n_d, n_a = rng.integers(0, 12, size=2)
+        d0 = rng.integers(0, 120, size=n_d) * 0.2           # 0.2 s grid: many equal overlaps (ties)
+        a0 = rng.integers(0, 120, size=n_a) * 0.2
+        d1 = d0 + rng.integers(1, 3, size=n_d) * 0.2
+        a1 = a0 + rng.integers(1, 30, size=n_a) * 0.2
+        det = [Event(sp("A", float(x), float(y)), "t") for x, y in zip(d0, d1)]
+        ann = [Event(sp("A", float(x), float(y)), "t") for x, y in zip(a0, a1)]
+
+        def us(evs):
+            return np.array([[round((e.span.start - T0) / timedelta(microseconds=1)),
+                              round((e.span.end - T0) / timedelta(microseconds=1))] for e in evs],
+                            dtype=np.int64).reshape(-1, 2)
+        assert match_count_us(us(det), us(ann), 2_000_000) == match_events(det, ann, 2.0)
 
 
 def test_greedy_matching_prefers_larger_overlap():

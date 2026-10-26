@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **6 — Tracking + event rules** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing running
+Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 full action indexing running · Gate 6.2: event branch DROPPED (rule, part 1)
 
 ---
 
@@ -1896,6 +1896,12 @@ fixed now; no post-hoc reinterpretation (rule above). Tuning is free, but the se
 - Output rows: frames where the track was matched to a detection, with that **detection's** box and score (not the
   Kalman box). Run on all 300 clips (indexing, like detection; no labels read).
 
+- **Added before any result (Mon 26 Oct, ~13:05, while writing `track_clip`):** pooling the vehicle classes needs a
+  class-agnostic merge first. YOLOX's per-class NMS can box one vehicle as both car and truck, and two near-identical
+  boxes would start two tracks (two "events" for one vehicle). Per frame, vehicle boxes with IoU >= `detection.nms_iou`
+  (0.65) to a higher-score vehicle box are dropped. Not tuned. Only output seen at this point: one test clip's
+  track count (G436 10:55, 78 tracks), no speed, rule or metric.
+
 **Speed and rules (step 6.1)**
 - Per track sample i at time t_i: the track's samples in [t_i - w/2, t_i + w/2] (w = `smooth_s`); speed = distance
   between the box centres of the first and last of them / their time difference. Undefined (NaN) if that time
@@ -1952,6 +1958,89 @@ fixed now; no post-hoc reinterpretation (rule above). Tuning is free, but the se
 - Reported outside the rule: intent matches over all 17 dev queries (false intents on non-vehicle queries).
 - Hard stop Wed 28 Oct 13:00 (CLAUDE.md).
 
+## Step 6.1 — tracking + stop/start rules: DONE (Mon 26 Oct, 12:45 → 13:00)
+
+**Built**
+- `rewind/track/bytetrack_vendor/`: reference ByteTrack tracker (FoundationVision/ByteTrack `d1bf019`, MIT), changes
+  in its NOTICE.md. **Checked against the real code:** lap 0.4.0's `_lapjv.pyx` pads to 2N x 2N with `cost_limit`
+  (not what I first assumed); the scipy replacement uses a smaller matrix with the same objective (each match changes
+  the total by cost − thresh). `tests/test_bytetrack.py` checks it against brute force on 300 random matrices.
+- `rewind/track/tracks.py` (tracker wrapper, cross-class merge, speed, rules, best box), `rewind/track/store.py`,
+  `scripts/track_pass.py`, `scripts/event_sweep.py`; `rewind/eval/metrics.match_count_us` (integer-microsecond
+  `match_events`, tested equal to it on 300 random cases incl. ties).
+- Tests: `test_bytetrack.py` (10), `test_track_rules.py` (13), `test_event_sweep.py` (5), 2 new in
+  `test_metrics.py`. **Mutation-checked:** 6 mutations of `tracks.py` (threshold `>=` → `>`, run adjacency, NaN rule,
+  min duration, box matching, index order) each make a test fail (the index-order one only after the test was
+  strengthened). Suite: **357 pass**.
+- Dependency: `scipy` 1.17.1 (approved in planning).
+
+**Track pass** (`uv run python -m scripts.track_pass`, background, CPU): 300 clips in **15.2 min**; 4,119,469 vehicle
+detections → **8,083 tracks**, 3,263,689 track rows; `artifacts/tracks/` 47 MB; settings `4d324505831e47ad`. G330
+(gym) has 0 vehicle detections. Honest note: the experiments rows of the track pass, the sweep and the dev check
+carry `d999bb0-dirty`: the 6.1 code was not yet committed; it is committed unchanged in `phase6.1` (later edits
+touched only `clip_events`' output columns and `embed_events`, not tracking or the rules).
+Side effect seen: while tracking ran, step 5.2's GPU job slowed from 32 to 45 s per clip (GPU at a software power
+cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (laptop power sharing, likely).
+
+**Sweep (tuning, pre-registered; `results/reports/events_6.1.md`, full grid `events_6.1_grid.csv`)**
+- 47 Kitware tuning clips (3.9 h incl. G330), labels: 351 stops, 350 starts. 144 settings, then the one-time edge
+  extension (min_stopped_s 0.4, min_moving_s 3.0, smooth_s 1.6 added) → 384 settings; 76 s.
+- **Selected:** `box_h_per_s`, stop_speed 0.2 box-h/s, min_stopped_s 1.0, min_moving_s 2.0, smooth_s **1.6** (the
+  extended edge: per the pre-registration, extended once only). Mean F1 0.487.
+
+  | pooled (tuning) | detected | labelled | matched | P | R | time-shift control P / R |
+  |---|---|---|---|---|---|---|
+  | vehicle_stops | 272 | 351 | 156 | **0.574** | **0.444** | 0.188 / 0.145 |
+  | vehicle_starts | 296 | 350 | 153 | **0.517** | **0.437** | 0.179 / 0.151 |
+
+  Per camera (stops / starts, P–R): G336 0.49–0.43 / 0.43–0.44; G340 0.58–0.42 / 0.48–0.39; G424 0.55–0.46 /
+  0.52–0.43; G436 0.74–0.46 / 0.69–0.47; G330 0 detections, 0 labels. IR G474 vs contrib (info): stops 1/5, starts 1/3.
+- **No setting of all 384 reaches P >= 0.5 and R >= 0.5 for either type** (best min(P, R): stops 0.480, starts 0.466).
+- **Dev held-out check (information only, `events_6.1_dev.md`):** stops P 0.583 / R 0.500 (21 of 42), starts P 0.500
+  / R 0.475 (19 of 40); shift control 0.111 / 0.095 and 0.026 / 0.025. Small n (95 % interval on 21/42 ≈ 0.35–0.65).
+- **Where recall is lost (scratch diagnostic, tuning, not part of any rule):** 87 % of the 701 labelled events have a
+  track covering the labelled vehicle (IoU >= 0.3 on >= half its 5 fps label frames); the rule fires near (same type,
+  ±2 s) only 54 % of those. So the loss is mostly the speed rule, not detection/tracking. Coverage is lowest for small
+  vehicles (73 % for label boxes <= 34 px tall; G336 76–78 %).
+- **👤 check replaced (rule 16; viewed by Claude, n = 10: 5 random detected stops + 5 starts on tuning, one frame each
+  at the best box, labels overlaid):** 4 coincide with a label (SUV by the cones G424, car on the road G436, driveway
+  start G436, a parking-row start G336). 4 are parked cars in crowded rows with no label (G340 x2, G424, G336), which
+  looks like box-centre jitter when a passing vehicle occludes them; the G336 one is the same car and place as the
+  labelled start 100 s later. 2 are small distant cars (G424, one by a stop sign) with no label: possibly real
+  stop-and-go that is not labelled. A single frame can't show motion, so this is an impression, not a measurement.
+
+## Step 6.2 — GATE 6.2: DROP the event branch (pre-registered rule, part 1; Mon 26 Oct, ~13:00)
+
+- **Rule applied as written:** part 1 needs, per type, pooled tuning P >= 0.5 AND R >= 0.5 at the selected setting.
+  vehicle_stops 0.574 / **0.444**, vehicle_starts 0.517 / **0.437** → **both fail** → `events.types: []` →
+  "If none passes, the event branch is dropped (no dev run needed)". **The rule clearly decides; part 2 (dev queries)
+  was not run.** The result does not depend on the selection objective: no grid setting passes either type.
+- **Config:** `events.enabled: false`, `events.types: []`, the selected rule values kept for the record,
+  `search.weights.events: 0` (step 7.4 tunes `action` only).
+- Not run because the branch is dropped (written and unit-tested in this step; kept in the repo for the record):
+  `scripts/build_vehicle_events.py` (SQLite `detected_events`), `scripts/embed_events.py` (crop + CLIP),
+  `rewind/search/events.py` (intent + event clips), `scripts/event_gate.py` (part 2), `rewind/video.frames_at`.
+  `query_rows` now passes the query row to `ranked(..., query=)` (the existing rankers ignore it; tests unchanged).
+- What this means for the product: Rewind has **no evidence for "stopping" or "starting"** beyond what appearance and
+  the action branch (LanguageBind) give. `vehicle_event` queries go through appearance + action only. On dev, the
+  action branch's vehicle_event R@10 was 0.25 (Gate 5.1).
+
+## Phase 6 summary (Mon 26 Oct)
+
+- Within-camera ByteTrack (vendored, MIT, one tracker per clip, no identities, no cross-clip/camera links): 8,083
+  tracks over 25 h in 15 min on CPU. Stop/start rules tuned on 701 Kitware tuning labels: best pooled P 0.57 / 0.52 at
+  R 0.44 / 0.44, well above the time-shift control (~0.15–0.19) but below the pre-agreed 0.5 / 0.5 bar for both types,
+  with no setting passing → **Gate 6.2: event branch dropped** (decided by the pre-registered rule, a day before the
+  Wed 13:00 hard stop). Dev held-out (information): stops 0.58 / 0.50, starts 0.50 / 0.48 on ~40 labels each.
+- Failure causes seen: the rule misses about half of the tracked labelled events; parked cars jitter under
+  occlusion (false stops/starts); small distant vehicles are tracked less (73 %).
+- Open issues / ideas (not scheduled): hysteresis (two thresholds) or a minimum displacement instead of a single
+  speed threshold; bottom-centre instead of box centre (occlusion from the top/side); tracking across clip boundaries
+  (now one tracker per 5-min clip).
+- **Verify by hand (Ashutosh):** read `rewind/track/tracks.py` (~190 lines) and the NOTICE of the vendored tracker;
+  if you disagree with dropping on the tuning numbers while dev stops reached 0.58 / 0.50, that would be a departure
+  from the pre-registered rule and must be recorded as yours.
+
 ## Third-party code and licenses (for README credits) — housekeeping (Mon 26 Oct, ~12:30)
 
 - **Partial download deleted** (Ashutosh approved): `artifacts/weights/LanguageBind_Video_V1.5_FT/.cache/` held an
@@ -1981,8 +2070,8 @@ fixed now; no post-hoc reinterpretation (rule above). Tuning is free, but the se
   | open_clip library | pip dependency | VERIFY at 10.1 (not vendored) | `open-clip-torch` 3.3.0 |
   | MEVA annotations | `data/annotations/meva-data-repo/` | CC-BY-4.0 (its LICENSE, step 0.3) | Kitware `meva-data-repo` @ `421841a`; Corona et al., WACV 2021 |
   | MEVA video | `data/raw/` | VERIFY at 10.1 (mevadata.org terms) | `s3://mevadata-public-01/` |
-
-  ByteTrack is added here at step 6.1.
+  | ByteTrack tracker | `rewind/track/bytetrack_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2021 Yifu Zhang | github.com/FoundationVision/ByteTrack @ `d1bf019`; Zhang et al., ECCV 2022. Used at step 6.1; the event branch was dropped at Gate 6.2 |
+  | scipy | pip dependency (step 6.1) | BSD-3-Clause (VERIFY at 10.1) | 1.17.1 |
 
 ---
 
