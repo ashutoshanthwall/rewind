@@ -1600,6 +1600,25 @@ queries. Operational form, in `rewind/eval/gate.py` with 6 hand-worked tests, us
   0.04–0.08 (background dominates) → centered mean 0.28–0.76, sd 0.12–0.28. Whether this helps retrieval is decided
   at Gate 4.4, not here.
 
+## Step 4.4 — dev ablation run, GATE 4.4 PENDING (Mon 26 Oct, ~10:45)
+
+- `scripts.appearance_search --ablation` (15 s): 12 variants × 17 dev queries (12 specific, 5 category), 12
+  experiments rows at `282334b`; report `results/reports/ablation_4.4.md`.
+- **The pre-registered rule, applied literally, picks `pad/none/raw`, the worst variant on the headline metric**
+  (median 13,515 s watched, 4/12 hits; worse than all dev baselines: sequential 5,932, random 6,413, witness 3,237,
+  motion 1,513). Cause: at the first step, motion crops are much better on specific queries (mean +5,407 s, CI
+  [+2,095, +8,760], 7/4/6) but slightly worse on the 5 category queries (AP@50 −0.028, CI [−0.062, +0.004]); "not
+  worse in either family" vetoes on that point estimate, and the greedy order then never revisits crops.
+- Gate code checked: it does exactly what was pre-registered (no bug).
+- **Tie-break reading** (computed on dev with the same results, scratch script): treat the family conflict as "rule
+  does not decide" and apply the agreed tie-break (better mean on the primary metric = seconds watched, CLAUDE.md
+  1.10), wins > losses still required → **`pad/motion/raw`**: median 394 s, 9/12 hits, R@10 0.333, category mAP@50
+  0.110 (best category value of all 12). Detection crops not adopted over motion (6/4/7, −17 s); centering not
+  adopted (3/2/12 with motion crops, category −0.050 CI excludes 0); tiles2 not adopted over pad.
+- Observation (not acted on): centering hurts once crops are in; the camera mean is taken over frames and crops
+  together. A per-camera-per-type mean is a candidate fix, testable on tuning.
+- **Waiting for Ashutosh:** interpreting the rule after seeing dev results is a protocol decision.
+
 ## Pre-agreed decision rules (Ashutosh, Mon 26 Oct) — apply without asking (CLAUDE.md rule 16)
 
 - **Tie-break:** when two variants have equal complexity and the gate rule does not decide, choose the better mean on
