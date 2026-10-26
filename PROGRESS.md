@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median
+Deadline: Fri 30 Oct 2026 · Current phase: **7 done → 8 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2285,7 +2285,7 @@ Order note: 7.4 ran before the 7.3 latency measurement because the API refuses t
 
 - **Rule applied as written:** R@10 ties at 0 for every weight -> tie-break lower median seconds -> **2** (unique).
   `search.weights.action: 2` in config.
-- **Flag for Ashutosh (the rule decides, but on noise):** the tie-break is a **17 s** difference, set by one query's
+- **Flag for Ashutosh (the rule decides, but on noise):** the tie-break is a **17 s** difference, set by one
   query: the median of the 6 specific queries is the mean of the 3rd and 4th values; the 4th is a miss (~19.1k s)
   and the 3rd is 565 s at w=2 (tun-s03) vs 598 s at w=0.25 / 0.5 / 1 (tun-s02). Category mAP@10 is lowest at w=2 (0.213 vs 0.308 at 0.5); the rule does not look at category queries.
   Per the pre-registration this is reported as it stands; departing from it would be Ashutosh's recorded decision.
@@ -2322,6 +2322,67 @@ camera + 1 h filtered request: 24 ms (both branches answered by `exact_small`). 
 - Measured while the step 7.2 synthetic build ran on one core (load average 1.8).
 
 **Open issues**: proxies are not served yet (UI, step 9.1); no auth (local tool).
+
+## Step 7.2 — scaling benchmark (Mon 26 Oct 21:10 → Tue 27 Oct 00:53)
+
+Ran last: the real-size part on Mon evening, the synthetic 1M + 2M run in the background (nohup,
+`results/logs/bench_synthetic.log`), as Ashutosh agreed ("leave it as is, we have time").
+
+**Done**
+- `scripts/benchmark_engine.py`: `--real` (the 12 built indexes + one all-camera index per branch built in memory;
+  61 text queries = templated activity prompts + tuning/dev query texts, never test), `--synthetic N` (random unit
+  512-d, float32 memmap under `artifacts/bench/`, deleted after each size — checked: the directory is empty),
+  `--report` (`results/reports/scaling.md` + `results/figures/scaling_7.2.png`, drawn with OpenCV: no new
+  dependency). recall@200 = |HNSW top 200 ∩ exact top 200| / 200; latency single-threaded, median of 3 passes after 5
+  warm-up queries. Settings in config `benchmark` (committed with 7.4).
+- Tests: `tests/test_benchmark.py` (3, hand-computed: recall incl. k cut and short exact lists, empty exact list
+  refused, NumPy top-k order). pytest **390 pass**.
+
+**Key numbers (k = 200; `results/reports/scaling.md`)**
+
+| index | rows | exact engine | exact NumPy | HNSW ef 200 recall / ms | ef 800 recall / ms |
+|---|---|---|---|---|---|
+| appearance per camera | 6.6k–41.6k | 1.9–10.5 ms | 0.13–3.8 ms | 0.880–0.977 / 0.6–1.2 | 0.989–1.000 / 1.3–3.5 |
+| **appearance, 6 cameras merged (API)** | 175,039 | 51.9 ms | 18.6 ms | **0.939 / 13.7** | 0.995 / 26.4 |
+| appearance, one all-camera index | 175,039 | 46.6 ms | 18.6 ms | 0.781 / 1.47 | 0.956 / 4.77 |
+| action per camera | 7.2k–7.6k | 2.9–3.2 ms | 0.19–1.8 ms | 0.835–0.981 / 0.6–0.7 | 0.936–1.000 / 1.5–1.7 |
+| **action, 6 cameras merged (API)** | 44,682 | 24.1 ms | 7.0 ms | **0.943 / 9.5** | 0.993 / 16.2 |
+| action, one all-camera index | 44,682 | 17.5 ms | 7.0 ms | 0.748 / 0.81 | 0.905 / 2.23 |
+| random 512-d | 1,000,000 | 252 ms | 106 ms | 0.020 / 3.2 | 0.072 / 12.4 |
+| random 512-d | 2,000,000 | 488 ms | 201 ms | 0.012 / 3.4 | 0.040 / 12.3 |
+
+Synthetic builds: 1M **69 min** (peak RSS 4.1 GiB), 2M **147 min** (7.9 GiB). 5M not run (instruction: 2M max).
+Time filter (60 random 30-min windows x 61 queries per branch): recall vs exact filtered search 1.000 (worst window
+0.996 appearance); appearance methods 1,098 exact_small / 2,448 exact_fallback / 114 hnsw_filtered, filtered median
+3.50 ms vs 0.65 ms exact over the window; action 3,050 / 572 / 38.
+
+**Honest reading**
+- **HNSW gives little or no speed-up at our real sizes.** Per camera it beats NumPy only on the five larger
+  appearance indexes; for G474 and every action index NumPy is faster. As the API searches (6 camera indexes per
+  branch), appearance HNSW is 13.7 ms vs 18.6 ms exact NumPy, and action HNSW 9.5 ms is **slower than exact NumPy
+  (7.0 ms)** while being approximate. The engine's own exact scan is 2.4–3.4x slower than NumPy at 44k+ rows and up to ~15x on the
+  smallest indexes (scalar loop vs BLAS).
+  CLAUDE.md 1.6 expected "brute force noticeably slower" at these sizes: measured, it is not.
+- HNSW pays off with size: at 1M–2M exact search is 106–488 ms while HNSW stays 3–12 ms — but random-vector recall
+  (0.01–0.07) says nothing about real data, and real 1M+ CLIP data was not tested.
+- The time filter is correct (recall 1.000) mostly because it ends in an exact path; for narrow windows going exact
+  directly would be ~5x faster. Candidate improvement, not changed.
+- Plot viewed by Claude (n = 1): first version joined the real 175k point to the random 1M point with one line (a
+  false trend) and overlapped 3 labels; fixed (separate segments per data group, crowded labels skipped).
+
+**Decisions / for Ashutosh**
+- **ef_search stays 200** (config value; no pre-registered rule covers changing it). Evidence for 8.1: ef 800 →
+  recall 0.995 / 0.993 for +12.7 / +6.7 ms per branch; exact NumPy is also within the latency budget. Lowest
+  per-camera recall at ef 200: action/G340 0.835.
+- Per-camera indexes (7.1 decision) kept: one all-camera index is ~9x faster for appearance but recall 0.78 at ef 200;
+  every option is far under the 46 ms end-to-end API latency.
+
+**Notes**
+- The 2 synthetic experiments rows carry git `5b20e29-dirty` / config `c28b69d8…`: the job was launched before the
+  7.4 commit, with `benchmark_engine.py` uncommitted. The edits made to the script after launch were in the
+  report/plot code and the docstring, not the synthetic measurement. The 7.2 real rows were committed with 7.4.
+- Background load: the 1-min load average recorded at the end of the 2M run was 11.0, so 2M latencies are noisier
+  than the real-size ones; the 7.3 latency was measured while the synthetic build ran (load 1.8).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
