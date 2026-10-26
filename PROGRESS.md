@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **7 done → 8 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **7 done → next: consistency check (dev, weight 0, ef 800), then 8** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2413,12 +2413,64 @@ Commits: `5b20e29` 7.1 · `316b3cd` 7.4 · `47321eb` 7.3 · `6bd4bfd` 7.2. pytes
    0.308 at 0.5). Any change from the rule's result would be Ashutosh's recorded decision; 8.1 ablations (dev) will
    show appearance-only vs fused.
 2. `ef_search` kept at 200 (no rule covers it); ef 800 gives recall ~0.99 for +7–13 ms per branch; exact NumPy also
-   fits the budget. Decide at 8.1 (the HNSW vs brute-force ablation is on the 8.1 list).
+   fits the budget. **Superseded: Ashutosh decided ef 800 (next section, decision 2).**
 3. No query in the tuning top 10 at any weight; 3 of 6 specific tuning queries missed by every weight.
 4. Deck vs build: no GoogleTest (engine's own test harness kept) and no cpp-httplib (FastAPI); deck to be updated.
 5. `-march=native`: the engine module must be built on the machine that runs it (README, 10.1).
 6. Proxies not served by the API yet (9.1). Time filter: going exact directly for narrow windows would be faster
    (not changed).
+
+## Ashutosh's decisions after Phase 7 (Tue 27 Oct, ~01:15) — recorded before any Phase 8 run
+
+Nothing was run when these were recorded. Dev has not been searched with the engine or with fusion yet (7.4 used
+tuning only).
+
+**1. FIRST task next session, before any Phase 8 work: consistency check.**
+- Apply decision 2 first (config `search.ef_search: 800`), so the check runs with the settings Phase 8 will use.
+- Run the new pipeline (C++ engine → fusion → clips, `scripts/fusion_tune.py` path) with **action weight 0** on the
+  **dev** queries. Confirm it reproduces the Gate 4.4 dev result for `pad/motion/raw` (NumPy brute force):
+  **median 394 s watched, 9/12 specific queries found**, R@10 0.333, category mAP@50 0.110
+  (`results/reports/ablation_4.4.md`, `scripts.gate44_tiebreak`).
+- If it does not match: find the root cause and fix it before anything else (candidates to check: split restriction
+  via `camera_ranges`, HNSW approximation, the k-per-branch merge across cameras, grouping differences between
+  `fusion.fuse` and the 4.4 path). On tuning, the engine at weight 0 already matched NumPy (one miss differed by 9 s
+  in miss cost only).
+- Also explain **why tuning medians are so much worse than dev** (~18,290 s at weight 0 on tuning vs 394 s on dev).
+  Known so far (not yet a full explanation): tuning has only 6 specific queries and 3 are missed by every weight, so
+  the median is the mean of the 3rd value and a miss (a miss costs a full sequential review of the 4.83 h of tuning
+  footage). Still to check: footage hours per split, query difficulty / qtype mix, IR share.
+- Record the result in PROGRESS.md before step 8.1.
+
+**2. Decision (engineering, not results-based): `search.ef_search: 800` for both branches.**
+- Evidence (7.2): merged-branch recall@200 0.995 (appearance) / 0.993 (action) vs 0.939 / 0.943 at ef 200; search
+  cost +12.7 / +6.7 ms per branch.
+- **Config not yet edited** (only recorded this session); the edit is the first action next session (task 1).
+- The 7.3 latency (46 ms median, p95 48 ms) was measured at **ef 200**. Expected at ef 800: roughly +19 ms of
+  search (both branches run one after the other), so ~65 ms; **not measured yet**. Re-run `scripts.api_latency`
+  after the config change.
+- Consequence: the 7.4 sweep ran at ef 200. The tuning cross-check showed HNSW at ef 200 did not change the
+  weight-0 metrics; the 8.1 comparison (decision 3) runs at ef 800.
+
+**3. Pre-registered for 8.1 (written before any 8.1 result): action weight 0 vs 2 on dev.**
+- Compare `search.weights.action` **0** (appearance only: simple) vs **2** (the 7.4 rule's choice: complex) on the
+  dev queries, everything else at the frozen config values (incl. ef 800), with the confirmed paired rule
+  `rewind/eval/gate.py` `paired_decision(simple=w0, complex=w2)` **as written**. The equal-complexity tie-break does
+  not apply (different complexity).
+- Whichever the rule picks goes into the frozen config. If it picks 0, the action branch is not searched (weight 0
+  excludes it; the API reports only appearance in `branches`).
+- No other action weights are tried on dev.
+
+**4. Deck note (for the deck / README / SUMMARY, steps 10.1–10.2).** Replace the deck's "fast at scale" claim with
+measured numbers:
+- end-to-end query latency (median, p95) — **use the number re-measured at ef 800** (decision 2); 46 ms median is
+  the ef 200 figure;
+- recall@200 ≈ 0.99 vs exact search at ef 800 (0.995 appearance, 0.993 action). "Near-exact", not "exact": it is
+  below 1;
+- the honest finding: at our sizes (≤175k vectors per branch) HNSW is about on par with NumPy brute force
+  (appearance 13.7 vs 18.6 ms; action slower, 9.5 vs 7.0 ms at ef 200); it pulls clearly ahead at 1M (3 ms vs 106 ms,
+  random vectors). The crossover between 175k and 1M was not measured, so say "beyond a few hundred thousand to ~1M
+  vectors", not an exact point;
+- also: drop GoogleTest and cpp-httplib (Phase 7 summary, flag 4).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
