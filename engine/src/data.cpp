@@ -160,6 +160,16 @@ EmbeddingManifest loadManifest(const std::string& path) {
 
 // ---------------------------------------------------------------- embedding store
 
+long long floatCount(long long rows, long long dim) {
+    if (dim <= 0) throw Error("embedding dimension must be > 0, got " + std::to_string(dim));
+    if (rows < 0) throw Error("row count must be >= 0, got " + std::to_string(rows));
+    if (rows > 2147483647LL)
+        throw Error(std::to_string(rows) + " rows: ids are int, at most 2147483647 rows");
+    if (rows > 0 && dim > 9223372036854775807LL / 4 / rows)
+        throw Error(std::to_string(rows) + " x " + std::to_string(dim) + " floats overflow 64 bits");
+    return rows * dim;
+}
+
 void validateVector(const float* v, int size, int expectedDim, double normTolerance,
                     const std::string& what) {
     if (size != expectedDim)
@@ -210,6 +220,18 @@ void EmbeddingStore::setData(int dim, const FloatArray& data, double normToleran
     validate(normTolerance);
 }
 
+void EmbeddingStore::setRows(int dim, long long rows, const float* data, double normTolerance) {
+    long long n = floatCount(rows, dim);
+    if (n > 0 && data == nullptr) throw Error("setRows: null data pointer");
+    delete[] values;
+    numDims = dim;
+    numRows = (int)rows;
+    values = new float[n > 0 ? n : 1];
+    for (long long i = 0; i < n; i++) values[i] = data[i];
+    sha256 = sha256Hex(values, n * 4);
+    validate(normTolerance);
+}
+
 void EmbeddingStore::load(const std::string& binPath, const std::string& manifestPath,
                           int expectedDim, const std::string& expectedModel,
                           double normTolerance) {
@@ -229,10 +251,11 @@ void EmbeddingStore::load(const std::string& binPath, const std::string& manifes
         throw Error(binPath + ": size " + std::to_string(bytes) + " bytes, manifest implies " +
                     std::to_string(expected) + " (truncated or wrong file)");
 
+    long long n = floatCount(m.rows, m.dim);
     delete[] values;
     numRows = m.rows;
     numDims = m.dim;
-    values = new float[m.rows * m.dim > 0 ? m.rows * m.dim : 1];
+    values = new float[n > 0 ? n : 1];
     std::ifstream in(binPath.c_str(), std::ios::binary);
     if (!in.read((char*)values, bytes)) throw Error("short read from " + binPath);
     std::string sha = sha256Hex(values, bytes);

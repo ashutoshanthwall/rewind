@@ -146,6 +146,10 @@ public:
     // Copies `values` (rows * dim floats) in and validates every row (used by tests).
     void setData(int dim, const FloatArray& values, double normTolerance,
                  const std::string& sourceSha256 = "");
+    // Copies `rows` x `dim` floats from a caller's buffer (e.g. a NumPy array through the
+    // Python bindings), validates every row, and records the SHA-256 of the copied bytes as
+    // the source hash, exactly as load() does for a file (so a saved index is tied to them).
+    void setRows(int dim, long long rows, const float* data, double normTolerance);
 
     const float* row(int i) const;
     int size() const;  // number of rows
@@ -161,6 +165,12 @@ private:
     int numDims;
     std::string sha256;
 };
+
+// rows * dim as a 64-bit count, for allocating and sizing a store. Rewind: the original code
+// multiplied two ints, which overflows past 2^31 floats (4.19 M rows at 512-d). Throws Error
+// for a negative row count, a dim <= 0, more rows than int ids allow, or a byte size that
+// does not fit in a long long.
+long long floatCount(long long rows, long long dim);
 
 // Throws an Error describing the first problem: wrong dimension, NaN, Inf, zero norm,
 // or a norm outside 1 +- normTolerance.

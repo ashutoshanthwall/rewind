@@ -67,6 +67,10 @@ int main() {
     runTest("sha256", testSha256);
     runTest("persistence", testPersistence);
     runTest("text encoder", testTextEncoder);
+    runTest("store sizes (64-bit)", testStoreSizes);
+    runTest("filtered search", testFilteredSearch);
+    runTest("collection persistence", testCollectionPersistence);
+    runTest("index lock", testIndexLock);
     std::cout << "\n" << passed << " checks passed, " << failed << " failed\n";
     return failed == 0 ? 0 : 1;
 }

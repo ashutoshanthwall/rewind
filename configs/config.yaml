@@ -229,6 +229,16 @@ search:
   max_clip_s: 60
   clip_rank: mean_top3
   context_s: 5
+  # step 7.1 (engine/, rewind/search/engine.py, scripts/build_indexes.py): one HNSW index per camera per branch,
+  # ids = row indices, id -> metadata on the Python side; decisions in PROGRESS.md (step 7.1, 26 Oct)
+  index_dir: artifacts/indexes
+  hnsw: {M: 16, ef_construction: 200, seed: 42}   # the engine's defaults (Flickr build), not tuned
+  norm_tolerance: 1.0e-5            # engine store check |norm - 1|; fp16 vectors are re-normalised in float32 first
+  filter_oversample: 4              # time filter: HNSW candidates = k * this, then the in-range ones are kept; a range
+                                    # with <= k * this rows is searched exactly. Not tuned (fixed before any result)
+  filter_min_fraction: 1.0          # "too few results": fewer in-range HNSW hits than this share of min(k, rows in
+                                    # range) -> exact search over the range. 1.0 = a filtered search always returns
+                                    # min(k, rows in range) results. Not tuned
 motion_check:
   # step 3.1 check (scripts/check_motion.py): activity in labelled events vs random windows of the same length
   seed: 31

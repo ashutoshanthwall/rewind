@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1)
+Deadline: Fri 30 Oct 2026 · Current phase: **6 done → 7 next** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE
 
 ---
 
@@ -2198,6 +2198,59 @@ reusable for 7.2), `src/text_encoder.cpp`.
      action ~7.4 k), so HNSW's speed advantage over brute force is smaller per index. Step 7.2 should measure
      latency at these real per-camera sizes as well as at the merged size. Still open for 7.1: whether ids stay
      row indices with a Python-side map (simplest) or become int64 inside the engine.
+
+## Step 7.1 — engine extended, 12 per-camera indexes built (Mon 26 Oct, ~15:00–16:00)
+
+**Index size reconciled (asked by Ashutosh).** Step 4.2 stored **456,293** appearance vectors = 49,689 kept frames x
+3 frame views (tile0, tile1, pad = 149,067) + 181,876 detection crops + 125,350 motion crops. The Gate 4.4 config
+`pad/motion/raw` uses only the `pad` view (49,689) + the motion crops (125,350; already <= 4 per frame, crop_rank max
+3) = **175,039** rows, raw (not centered). Tiles and detection crops stay on disk for the 8.1 ablations (NumPy).
+Action: all 44,682 windows. Per camera: appearance G330 36,636 · G336 35,221 · G340 19,791 · G424 35,145 · G436
+41,631 · G474 6,615; action 7,152–7,599 each.
+
+**Done (engine, targeted; HNSW internals untouched; `engine/UPSTREAM.md` lists every change)**
+- **64-bit sizes:** `floatCount(rows, dim)` (checked `long long`) replaces the int multiply in `EmbeddingStore::load`;
+  test: 5 M x 512 = 2,560,000,000 > INT_MAX exactly, bad inputs rejected. (`row()` and the HNSW row offsets were
+  already `long long`.)
+- `EmbeddingStore::setRows()` (copy from a NumPy buffer, SHA-256 of the bytes like `load()`).
+- `NamedIndex` / `IndexCollection` (`include/collection.h`): named indexes, each = store + HNSW + one time per row +
+  a **std::mutex** held by every search/build/save/load. Time filter exactly as decided: no range -> HNSW top k;
+  range -> n rows in range; n = 0 -> empty; n <= k x `filter_oversample` -> exact over the range; else HNSW top
+  k x oversample, keep in-range hits; fewer than `filter_min_fraction` x min(k, n) -> **exact fallback** over the
+  range. Each search reports its method (hnsw / empty / exact_small / hnsw_filtered / exact_fallback).
+- pybind11 module `rewind_engine` (`engine/python/rewind_engine.cpp`, `-DREWIND_PYTHON=ON`; GIL released in every
+  index call; engine errors -> `rewind_engine.EngineError`). Introduced here because the indexes are built from
+  Python; step 7.3 adds the API on top.
+- **Ids stay row indices** (decision); `rewind/search/engine.py` keeps row -> metadata in `meta.parquet` per index,
+  converts fp16 -> float32 and re-normalises (fp16 max |norm − 1| measured **2.4e-4** > the engine's 1e-5), and
+  merges cameras by score (ties camera, row). k = `search.k_per_index` per **branch** (each camera returns k, the best
+  k overall are kept), so results equal the 4.4 / 5.1 NumPy top-k semantics up to HNSW approximation.
+- `scripts/build_indexes.py`: per camera vectors.f32 + manifest.json (SHA-256) -> engine reloads from the file ->
+  build -> graph.hnsw + meta.parquet (+ `wall_s` = video start + t_s) + build.json; .tmp dir then rename.
+- Config (new keys, `search`): `index_dir`, `hnsw {M 16, ef_construction 200, seed 42}` (engine defaults, not tuned),
+  `norm_tolerance 1e-5`, **`filter_oversample: 4`**, **`filter_min_fraction: 1.0`** (both fixed before any result,
+  not tuned).
+
+**Key numbers:** full build **3 min 26 s** (appearance 4–40 s per camera, action ~6 s); `artifacts/indexes/` 503 MB;
+**loading all 12 indexes: 2.4 s**, 865 MiB RSS. Spot check: 300 random appearance rows equal their source vector
+(re-normalised) to 1.2e-7; a row's own vector returns that row as exact top-1.
+
+**Tests:** engine `sir_tests` **232 checks pass** (new: store sizes, filtered search vs a plain-loop filtered brute
+force over 6 ranges incl. every method path, fallback forced with oversample 1, save/load round trip and stale-graph
+rejection, concurrent searches). **Mutation check:** with the lock removed from `search`, the concurrency test
+failed 3/3 runs. pytest **369 pass** (new `tests/test_engine.py`: wall-clock conversion hand-computed, fp16
+re-normalisation, Engine vs NumPy brute force for camera/time filters incl. an empty range — exact path identical,
+HNSW recall >= 0.95 —, reload, wrong model refused, 4 threads = serial answers).
+
+**Review (inline):** found and fixed: `loadVectors/setVectors` kept stale times from earlier rows (test added). No
+try/except, no test-split access (indexes hold footage of all splits, no labels — as steps 4.3 / 5.2).
+
+**Open issues / notes**
+- Evaluation on tuning/dev must restrict search to that split's footage: done with the time filter (per camera, the
+  split's video spans as wall-clock ranges) — implemented in 7.4. Searching a shared index traverses graph nodes of
+  test footage (no labels, no results kept); noted for honesty.
+- `build_indexes` replaces an index directory it rebuilds (derived data under `artifacts/indexes/`).
+- `-march=native`: the module must be built on the machine that runs it (README, step 10.1).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 

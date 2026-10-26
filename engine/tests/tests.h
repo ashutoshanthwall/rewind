@@ -35,5 +35,10 @@ void testRandom();
 void testSha256();
 void testPersistence();
 void testTextEncoder();
+// Rewind, step 7.1 (test_collection.cpp)
+void testStoreSizes();
+void testFilteredSearch();
+void testCollectionPersistence();
+void testIndexLock();
 
 #endif
