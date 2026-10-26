@@ -1781,8 +1781,9 @@ index from the data or the config, not as a constant.
   curl + sha256). `scripts/appearance_search.query_rows` got an optional qtype filter.
 - **Dependencies (approved by Ashutosh):** `transformers` 5.20.2 and `einops` 0.8.2 in the main env (no torch change).
   Weights `LanguageBind_Video_V1.5_FT` at HF commit `5d53aab`, 2.11 GB, sha256 verified (`artifacts/weights/`). The
-  first download (huggingface_hub) stalled at ~260 MB and was stopped; its partial file is still in
-  `artifacts/weights/LanguageBind_Video_V1.5_FT/.cache/` (~260 MB, safe to delete; not deleted without asking).
+  first download (huggingface_hub) stalled and was stopped; its partial file was in
+  `artifacts/weights/LanguageBind_Video_V1.5_FT/.cache/`. (Correction, 26 Oct: it was 805 MB, not ~260 MB as first
+  written; deleted with Ashutosh's approval, see "Third-party code and licenses".)
 - Config: `action.languagebind` (weights dir, revision, sha256, license), `action.batch_windows: 4`,
   `action.sanity` (the pre-registered thresholds).
 
@@ -1870,6 +1871,38 @@ probed vehicle prompts; the action-qtype queries were not covered by it.
 - Weights license re-checked in the downloaded model card: `license: mit`.
 - **To do when it finishes:** check every clip has `.npy` + `.parquet` + `.done.json` with one settings hash, rows =
   windows, fp16 / 768-d / finite / unit norm, and no `.tmp` files; check the experiments row; record totals here.
+
+## Third-party code and licenses (for README credits) — housekeeping (Mon 26 Oct, ~12:30)
+
+- **Partial download deleted** (Ashutosh approved): `artifacts/weights/LanguageBind_Video_V1.5_FT/.cache/` held an
+  **805 MB** `.incomplete` file from the stalled huggingface_hub download plus lock/metadata files (PROGRESS had said
+  ~260 MB). The complete weights are untouched: `pytorch_model.bin` sha256 re-checked = config `679550de…29d`.
+- **Vendored code checked against upstream** (raw GitHub files fetched to the scratchpad, 26 Oct):
+  - `rewind/embed/languagebind_vendor/LICENSE` byte-identical to LanguageBind `LICENSE` at `7070c53`;
+    `LICENSE-transformers` byte-identical to transformers `LICENSE` at `v4.30.2`.
+  - LanguageBind's own `.py` files have **no license header upstream**, so none was lost. `configuration_video.py`
+    is byte-identical. `modeling_video.py` differs only by the two import changes in NOTICE.md; it now also starts
+    with a 2-line provenance comment (source, commit, MIT, copyright, "modified, see NOTICE.md").
+  - `clip_v4_30_2.py` keeps the original Apache-2.0 header. **Fixed:** its comment and NOTICE.md said "copied
+    unchanged", but the import block was rewritten (absolute imports, config classes from `configuration_video`).
+    Apache-2.0 §4(b) requires modified files to say so; both now do. Function and class bodies are unchanged (every
+    line outside the import block and the provenance comment occurs in upstream `modeling_clip.py`).
+  - `tests/test_languagebind.py`: 2 pass after the comment changes.
+- **Credits list for the README (step 10.1):**
+
+  | Component | Where | License | Source / version |
+  |---|---|---|---|
+  | LanguageBind video model code | `rewind/embed/languagebind_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2023 PKU-YUAN's Group | github.com/PKU-YuanGroup/LanguageBind @ `7070c53`; Zhu et al., ICLR 2024 |
+  | transformers CLIP pieces | `rewind/embed/languagebind_vendor/clip_v4_30_2.py` (`LICENSE-transformers`) | Apache-2.0, (c) 2021 The OpenAI Team Authors and The HuggingFace Team | transformers `v4.30.2`, modified imports |
+  | LanguageBind_Video_V1.5_FT weights | `artifacts/weights/` (not in git) | MIT (model card); training data VIDAL-10M is CC-BY-NC-4.0 | HF `LanguageBind/LanguageBind_Video_V1.5_FT` @ `5d53aab` |
+  | YOLOX model code | `rewind/detect/yolox_vendor/` (`LICENSE`, `NOTICE.md`) | Apache-2.0, (c) Megvii Inc. | PyPI sdist yolox 0.3.0; Ge et al. 2021 |
+  | YOLOX-s weights | `artifacts/weights/yolox_s.pth` | Apache-2.0 | YOLOX release `0.1.1rc0` |
+  | CLIP ViT-B-16 weights `laion2b_s34b_b88k` | HF cache (not in git) | MIT (model card, verified at step 4.2 prep) | HF `laion/CLIP-ViT-B-16-laion2B-s34B-b88K` @ `7288da5a`; Radford et al. 2021 |
+  | open_clip library | pip dependency | VERIFY at 10.1 (not vendored) | `open-clip-torch` 3.3.0 |
+  | MEVA annotations | `data/annotations/meva-data-repo/` | CC-BY-4.0 (its LICENSE, step 0.3) | Kitware `meva-data-repo` @ `421841a`; Corona et al., WACV 2021 |
+  | MEVA video | `data/raw/` | VERIFY at 10.1 (mevadata.org terms) | `s3://mevadata-public-01/` |
+
+  ByteTrack is added here at step 6.1.
 
 ---
 

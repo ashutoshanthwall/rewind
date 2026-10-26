@@ -17,9 +17,10 @@
 #
 # Vendored by Rewind from transformers v4.30.2, src/transformers/models/clip/modeling_clip.py (Apache-2.0, full text
 # in LICENSE-transformers): _expand_mask, contrastive_loss, clip_loss, CLIPOutput, CLIPTextEmbeddings, CLIPAttention,
-# CLIPMLP, unchanged, with the imports they need. Newer transformers removed _expand_mask and changed
-# CLIPAttention.forward (no causal_attention_mask argument: LanguageBind's text tower would silently lose its causal
-# mask). See NOTICE.md.
+# CLIPMLP, with their bodies unchanged. MODIFIED by Rewind: the import block was rewritten to the imports these
+# pieces need (absolute transformers imports; the config classes from .configuration_video). Newer transformers
+# removed _expand_mask and changed CLIPAttention.forward (no causal_attention_mask argument: LanguageBind's text
+# tower would silently lose its causal mask). See NOTICE.md.
 
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple

@@ -1,3 +1,5 @@
+# Vendored from LanguageBind (https://github.com/PKU-YuanGroup/LanguageBind, commit 7070c53), MIT License,
+# Copyright (c) 2023 PKU-YUAN's Group: full text in LICENSE. MODIFIED by Rewind (imports only): see NOTICE.md.
 import math
 from typing import Optional, Tuple, Union
 

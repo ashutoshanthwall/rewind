@@ -11,11 +11,19 @@
   2. `CLIPMLP, CLIPAttention, CLIPTextEmbeddings, _expand_mask, CLIPOutput, clip_loss` are imported from
      `clip_v4_30_2.py` instead of the installed transformers. `CLIPVisionEmbeddings` is no longer imported (the file
      defines its own class of that name, which shadowed the import).
+  3. A 2-line provenance comment at the top (source, commit, MIT, copyright, "modified, see NOTICE.md"). Upstream
+     files carry no license header of their own (checked against commit `7070c53`, 26 Oct), so there was none to keep.
   No model code was changed.
-- **`clip_v4_30_2.py`:** copied unchanged from transformers v4.30.2 `src/transformers/models/clip/modeling_clip.py`
+- **Checked against upstream (26 Oct):** `LICENSE` byte-identical to LanguageBind's `LICENSE` at `7070c53`;
+  `LICENSE-transformers` byte-identical to transformers' `LICENSE` at `v4.30.2`; `configuration_video.py`
+  byte-identical; `modeling_video.py` differs only by changes 1–3; `clip_v4_30_2.py` keeps the upstream Apache header
+  and every line outside its import block and provenance comment occurs in upstream `modeling_clip.py`.
+- **`clip_v4_30_2.py`:** pieces copied from transformers v4.30.2 `src/transformers/models/clip/modeling_clip.py`
   (sha256 `1feb4c05e271dd181aa260eac13b10a5fcc1bd4d3cac68506e2a9bfee4024e49`, raw GitHub at tag `v4.30.2`):
   `_expand_mask`, `contrastive_loss`, `clip_loss`, `CLIPOutput`, `CLIPTextEmbeddings`, `CLIPAttention`, `CLIPMLP`,
-  plus the imports they need. **License:** Apache-2.0 (full text in `LICENSE-transformers`), Copyright 2021 The
+  with their bodies unchanged and the original Apache-2.0 header kept. **Modified:** the import block was rewritten to
+  what these pieces need (absolute `transformers.*` imports instead of relative ones; `CLIPTextConfig` /
+  `CLIPVisionConfig` from `configuration_video.py`), and a provenance comment says so. **License:** Apache-2.0 (full text in `LICENSE-transformers`), Copyright 2021 The
   OpenAI Team Authors and The HuggingFace Team.
 - **Why vendored:** the LanguageBind repo has no installable package (`import languagebind` imports every modality and
   pulls in decord, pytorchvideo, torchaudio, peft) and pins transformers 4.30.2, which needs huggingface-hub < 1.0
