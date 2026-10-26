@@ -168,6 +168,20 @@ action:
   frames_per_window: 8
   window_s: 4
   stride_s: 2
+  # step 5.1 (PROGRESS.md pre-registration): candidate (b), scripts/embed_action.py, rewind/embed/languagebind.py
+  languagebind:
+    weights_dir: artifacts/weights/LanguageBind_Video_V1.5_FT    # scripts/fetch_languagebind.sh
+    revision: 5d53aab2ec8944c4babd16fb30cab845686e296f           # Hugging Face commit of LanguageBind/LanguageBind_Video_V1.5_FT
+    weights_sha256: 679550de18a870da915eeb6ed32960a632d704d403815633d80b4d31ee21629d
+    license: MIT (code and weights; training data VIDAL-10M is CC-BY-NC-4.0)
+  batch_windows: 4                  # windows (x frames_per_window frames) per model call
+  # implementation sanity check before any dev query is scored (pre-registered; tuning only)
+  sanity:
+    fp16_windows: 16                # fp16 vs fp32 embeddings of this many tuning windows
+    fp16_min_cos: 0.99
+    n_clips: 2                      # tuning RGB clips with the most vehicle_starts + vehicle_stops (Kitware)
+    min_auc: 0.55                   # (b) at or below this on either prompt = implementation bug
+    prompts: {vehicle_starts: a vehicle starts moving, vehicle_stops: a vehicle stops}
 events:
   enabled: TBD                      # Gate 6.2
   tracker: bytetrack

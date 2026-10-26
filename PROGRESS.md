@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **4 — Appearance index** (autopilot) · 4.1 ✔ dedup 1.0 · 4.2 waiting: pretrained tag near-tie (NEEDS_USER)
+Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · 5.1: LanguageBind set up; pre-registered sanity check (3) failed, no bug found → waiting for Ashutosh
 
 ---
 
@@ -1764,6 +1764,61 @@ adopt / not adopt, so it decides by construction; there is no near-tie clause.
 hash), test on 10 min, then a background run with log and PID under `results/logs/`. **Note for step 7.1:**
 LanguageBind vectors are **768-d** (appearance is 512-d), so the engine must take the vector dimension per named
 index from the data or the config, not as a constant.
+
+## Step 5.1 — setup, sanity check: (3) FAILED → stopped for Ashutosh (Mon 26 Oct, 11:22 → 11:45)
+
+**Built** (no dev result computed yet):
+- `rewind/embed/windows.py` (windows, 8-frame indices, mean-pooled CLIP windows; hand-computed tests in
+  `tests/test_windows.py`), `rewind/eval/metrics.auc` (+ hand-computed test).
+- LanguageBind: model code vendored in `rewind/embed/languagebind_vendor/` (MIT, upstream commit `7070c53`) with the
+  transformers **v4.30.2** CLIP attention/MLP/text-embedding code (Apache-2.0), because newer transformers removed
+  `_expand_mask` and would silently drop the text tower's causal mask. Changes listed in its `NOTICE.md`. Wrapper
+  `rewind/embed/languagebind.py`. `tests/test_languagebind.py` (tiny random model, CPU): text tower is causal
+  (**mutation-checked:** swapping in transformers 5.x `CLIPAttention` makes it fail), and windows in a batch are
+  embedded independently.
+- `scripts/embed_action.py` (resumable per clip, `--sanity`, `--encode-queries`), `scripts/action_bakeoff.py`
+  (Gate 5.1 scoring), `scripts/check_languagebind.py` (debugging), `scripts/fetch_languagebind.sh` (resumable
+  curl + sha256). `scripts/appearance_search.query_rows` got an optional qtype filter.
+- **Dependencies (approved by Ashutosh):** `transformers` 5.20.2 and `einops` 0.8.2 in the main env (no torch change).
+  Weights `LanguageBind_Video_V1.5_FT` at HF commit `5d53aab`, 2.11 GB, sha256 verified (`artifacts/weights/`). The
+  first download (huggingface_hub) stalled at ~260 MB and was stopped; its partial file is still in
+  `artifacts/weights/LanguageBind_Video_V1.5_FT/.cache/` (~260 MB, safe to delete; not deleted without asking).
+- Config: `action.languagebind` (weights dir, revision, sha256, license), `action.batch_windows: 4`,
+  `action.sanity` (the pre-registered thresholds).
+
+**Measured:** config verified: projection dim **768**, 8 frames, temporal attention, `lora_r 0`. Load 8 s; VRAM 1.0 GB
+loaded, **peak 1.45 GB** at 4 windows/batch (fits 6 GB easily). Model only **~4.2 windows/s** (1, 4 and 8 windows per
+batch are the same speed); end to end ~3.3 windows/s (149 windows / 45 s per 5-min clip incl. decoding). Projected:
+dev 3.5 h ≈ 32 min, all 20.2 h ≈ 3.1 h.
+
+**Pre-registered sanity check** (`uv run python -m scripts.embed_action --sanity`, log
+`results/logs/action_sanity.log`; tuning clips G436 hospital 14:55 (39 vehicle start/stop events) and G424 school
+14:50 (36)):
+1. Weights: **ok, with one deviation from the literal wording "strict=True".** Strict loading failed on exactly one
+   key, `text_model.embeddings.position_ids`: the checkpoint doesn't store this constant 0..76 index buffer. Every
+   learned tensor matched and there were no unexpected keys. Fix: load non-strict and accept only that missing key,
+   after checking that the buffer equals 0..76. Any other mismatch is still an error.
+2. fp16 vs fp32 over 16 windows: cosine min **0.9999** → ok.
+3. AUC of prompt vs annotated windows (298 windows; (a) = mean-pooled CLIP on the same windows):
+
+   | prompt | positive windows | AUC (b) LanguageBind | AUC (a) CLIP |
+   |---|---|---|---|
+   | "a vehicle starts moving" | 112 | 0.575 | 0.585 |
+   | "a vehicle stops" | 96 | **0.481** | 0.559 |
+
+   **(b) ≤ 0.55 on "a vehicle stops" → check (3) FAILED.** Per the pre-registration this is treated as a possible
+   implementation bug, so I debugged it:
+   - **Known-answer test** (`scripts.check_languagebind --known-answer`, log `results/logs/check_languagebind.log`):
+     LanguageBind's own sample videos and captions from its `inference.py`. Each video matches its own caption with
+     both preprocessings: cosine 0.28 / 0.25 on the right caption vs 0.00 / 0.02 on the wrong one (pad); softmax
+     1.0 / 0.0. The implementation reproduces the model's intended behaviour.
+   - **Centre crop instead of pad** (diagnostic, tuning only, `--centre-crop-auc`): AUC 0.600 (starts) / 0.512
+     (stops). It still fails, so the letterbox is not the cause.
+   - **Conclusion: no implementation bug found.** The weak AUC looks like the model's real behaviour on these CCTV
+     scenes and generic prompts. Note that CLIP is also weak here (0.56–0.59): in these busy scenes, 32–38 % of
+     windows contain a labelled start/stop somewhere in the frame.
+- The pre-registration says: "If it is not fixed, stop and report to Ashutosh." **Stopped here; no dev window or
+  query has been embedded or scored.** Setup timebox: 11:22 → 11:45 used (23 of 60 min).
 
 ---
 

@@ -92,11 +92,15 @@ def split_videos(conn, split: str) -> list:
     return [v for v in load_videos(conn) if v.video_id in ids]
 
 
-def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: SearchConfig) -> list[dict]:
-    """The frozen queries of a split, scored like the baselines."""
+def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: SearchConfig,
+               qtypes: tuple | None = None) -> list[dict]:
+    """The frozen queries of a split (only these qtypes, if given), scored like the baselines. index: anything with
+    footage_s and ranked(); clip: anything with encode_text()."""
     m = cfg["metrics"]
     out = []
     for q in load_queries(QUERIES_DIR, split):
+        if qtypes is not None and q["qtype"] not in qtypes:
+            continue
         base = {k: q[k] for k in ("query_id", "kind", "qtype", "specificity", "modality", "camera_id")}
         z = clip.encode_text([q["query"]])[0]
         if q["kind"] == "specific":

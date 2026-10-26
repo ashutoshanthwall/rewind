@@ -17,6 +17,8 @@ dependencies = [
   "uvicorn",
   "pybind11",
   "pyyaml",
+  "transformers>=5.20.2",
+  "einops>=0.8.2",
 ]
 
 [dependency-groups]

@@ -244,3 +244,13 @@ def test_specific_metrics_average_over_rankings():
              [sp("B", 0, 60), sp("A", 0, 60)]]        # hit at rank 1: 60 + 10 = 70 s
     # R@1 = mean(1, 0) = 0.5; R@2 = mean(1, 1) = 1; seconds = mean(10, 70) = 40
     assert specific_metrics(lists, gt, footage_s=1000, ks=[1, 2]) == {"R@1": 0.5, "R@2": 1.0, "seconds": 40.0}
+
+
+def test_auc_hand_computed():
+    from rewind.eval.metrics import auc
+    # positives 0.9, 0.4; negatives 0.5, 0.4, 0.1 -> pairs: 0.9 beats all 3 (3); 0.4 beats 0.1 (1), ties 0.4 (0.5),
+    # loses to 0.5 (0) -> 4.5 / 6 = 0.75
+    assert auc([0.9, 0.5, 0.4, 0.4, 0.1], [1, 0, 1, 0, 0]) == pytest.approx(0.75)
+    assert auc([1, 2], [0, 1]) == 1.0 and auc([2, 1], [0, 1]) == 0.0
+    with pytest.raises(ValueError, match="both classes"):
+        auc([1, 2], [1, 1])

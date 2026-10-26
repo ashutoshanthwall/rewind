@@ -145,3 +145,15 @@ def bootstrap_ci(values: Sequence[float], stat: Callable[[Sequence[float]], floa
     boots = [stat(rng.choices(values, k=len(values))) for _ in range(n_boot)]
     lo, hi = np.quantile(boots, [(1 - level) / 2, (1 + level) / 2])  # linear interpolation between order stats
     return float(lo), float(hi)
+
+
+def auc(scores: Sequence[float], labels: Sequence[bool]) -> float:
+    """Area under the ROC curve: probability that a random positive scores above a random negative, ties count
+    1/2 (Mann-Whitney). Raises if either class is empty."""
+    s, y = np.asarray(scores, float), np.asarray(labels, bool)
+    pos, neg = s[y], s[~y]
+    if len(pos) == 0 or len(neg) == 0:
+        raise ValueError(f"AUC needs both classes: {len(pos)} positive, {len(neg)} negative")
+    greater = (pos[:, None] > neg[None, :]).sum()
+    ties = (pos[:, None] == neg[None, :]).sum()
+    return float((greater + 0.5 * ties) / (len(pos) * len(neg)))
