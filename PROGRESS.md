@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · 5.1: LanguageBind set up; pre-registered sanity check (3) failed, no bug found → waiting for Ashutosh
+Deadline: Fri 30 Oct 2026 · Current phase: **5 — Action branch** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · 5.1: sanity (3) failed, no bug found; Ashutosh: run the dev gate → dev embedding running
 
 ---
 
@@ -1819,6 +1819,12 @@ dev 3.5 h ≈ 32 min, all 20.2 h ≈ 3.1 h.
      windows contain a labelled start/stop somewhere in the frame.
 - The pre-registration says: "If it is not fixed, stop and report to Ashutosh." **Stopped here; no dev window or
   query has been embedded or scored.** Setup timebox: 11:22 → 11:45 used (23 of 60 min).
+
+**Decision (Ashutosh, Mon 26 Oct, ~11:50, before any dev result): run the Gate 5.1 dev bake-off.** Check (3) is
+counted as answered: it was meant to catch implementation bugs, and debugging found none. This is Ashutosh's explicit
+departure from the pre-registered "stop and report" clause, recorded here before the dev run. Nothing else changes:
+same candidates, windows, queries, metrics and paired rule as pre-registered. Caveat for the record: check (3) only
+probed vehicle prompts; the action-qtype queries were not covered by it.
 
 ---
 
