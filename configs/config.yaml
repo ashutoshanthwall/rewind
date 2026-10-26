@@ -213,6 +213,10 @@ events:
     min_p: 0.5                      # Gate 6.2 part 1, per type, pooled over tuning RGB cameras with Kitware labels
     min_r: 0.5
     shift_control_s: 30             # informational chance control: detected spans moved by this, circular in the clip
+  coverage_check:                   # Finding F1 diagnostic (scripts/event_coverage.py; tuning only, not a gate)
+    min_iou: 0.3                    # a track box covers a label box at this IoU (as in the scratch diagnostic, 26 Oct)
+    min_frame_share: 0.5            # "tracked": covered on at least this share of the label's grid frames
+    n_size_bins: 4                  # label box-height quantile bins in the breakdown
   intent_keywords:
     vehicle_stops: [stop, stops, stopped, stopping, park, parks, parked, parking, pulls over, halts]
     vehicle_starts: [start, starts, starting, drives off, pulls away, leaves, departs]
