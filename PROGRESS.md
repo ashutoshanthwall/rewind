@@ -1789,7 +1789,7 @@ index from the data or the config, not as a constant.
 **Measured:** config verified: projection dim **768**, 8 frames, temporal attention, `lora_r 0`. Load 8 s; VRAM 1.0 GB
 loaded, **peak 1.45 GB** at 4 windows/batch (fits 6 GB easily). Model only **~4.2 windows/s** (1, 4 and 8 windows per
 batch are the same speed); end to end ~3.3 windows/s (149 windows / 45 s per 5-min clip incl. decoding). Projected:
-dev 3.5 h ≈ 32 min, all 20.2 h ≈ 3.1 h.
+dev 3.5 h ≈ 32 min, all 25.0 h ≈ 3.8 h (corrected: the footage is 25.0 h over 300 clips; 20.2 h was the appearance run without the 58 reused tuning clips). Measured later: 4.8 windows/s end to end on dev.
 
 **Pre-registered sanity check** (`uv run python -m scripts.embed_action --sanity`, log
 `results/logs/action_sanity.log`; tuning clips G436 hospital 14:55 (39 vehicle start/stop events) and G424 school
@@ -1859,6 +1859,17 @@ probed vehicle prompts; the action-qtype queries were not covered by it.
   ranked clips across the split), so neither result overrides the other.
 - **Note for step 7.1: LanguageBind vectors are 768-d** (appearance 512-d). The engine must take the dimension per
   named index from the data or config, not as a constant. Step 7.4 fusion weight for `action` is still TBD (tuning).
+
+## Step 5.2 — full action indexing: LAUNCHED (Mon 26 Oct, 12:11)
+
+- `nohup uv run python -m scripts.embed_action --pid-file results/logs/embed_action.pid > results/logs/embed_action.log 2>&1 &`
+  at commit `8e37f28` (clean). Same settings hash `c755729736ca4da5`: the 42 dev clips are reused; **258 clips /
+  21.5 h to do, first ETA 134 min (≈ 14:25)**. Peak VRAM 1.45 GB. Output ≈ 37.5k windows × 768 × fp16 ≈ 58 MB.
+- The script test the step asks for ("test on 10 minutes") is covered by the dev run: the same script on 42 clips /
+  3.5 h, with every output checked (see GATE 5.1).
+- Weights license re-checked in the downloaded model card: `license: mit`.
+- **To do when it finishes:** check every clip has `.npy` + `.parquet` + `.done.json` with one settings hash, rows =
+  windows, fp16 / 768-d / finite / unit norm, and no `.tmp` files; check the experiments row; record totals here.
 
 ---
 
