@@ -84,7 +84,7 @@ def main() -> None:
     for r in worst.itertuples():
         q = saved[r.query_id]["query"]
         clips = saved[r.query_id]["clips"][:TOP]
-        strip = figs / f"{r.query_id}_rewind.jpg"
+        strip = figs / f"{r.query_id}_rewind.jpg" if clips else None
         if clips:
             cv2.imwrite(str(strip), thumbs(clips, widths, proxies))
         rk = ranks[ranks.query_id == r.query_id]
@@ -95,9 +95,11 @@ def main() -> None:
                              f"{' ' + str(c['best']['appearance'].get('class')) if c['best']['appearance'].get('class') else ''}"
                              if 'appearance' in c['best'] else "") for c in clips)
         key = REPO_ROOT / "eval" / "queries" / "keyframes" / f"{r.query_id}.jpg"
+        if not key.exists():
+            raise FileNotFoundError(f"{key}: keyframe sheet missing (scripts.make_worksheets --sheets-only redraws it)")
         table.append([r.query_id, r.qtype, r.specificity, f"{r.modality} / {r.label_source}", q["activity_type"],
                       f"\"{q['query']}\"", span, f"{r.seconds:,.0f} s / " + ("miss" if r.hit_rank == -1 else f"rank {int(r.hit_rank)}"),
-                      best, ret, f"[truth]({display_path(key)}) · [returned]({display_path(strip)})", ""])
+                      best, ret, f"[truth]({display_path(key)}) · " + (f"[returned]({display_path(strip)})" if strip else "returned: none"), ""])
         csv_rows.append({"query_id": r.query_id, "qtype": r.qtype, "modality": r.modality, "seconds": r.seconds,
                          "hit_rank": r.hit_rank, "event_vector_ranks": best, "cause": ""})
     lines = [
