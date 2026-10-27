@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **8 prep done (ef 800, latency 62 ms, consistency OK) → 8.1 dev ablations** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → waiting for Ashutosh before 8.2** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2539,6 +2539,56 @@ pad/motion/raw, action weight 2, ef 800. So **each comparison changes one thing 
 - **Freeze:** the config with A and B applied (and, if B adopts per-type centering, the main indexes rebuilt) is
   committed; the SHA-256 of `configs/config.yaml` (raw bytes, as `run_stamp`) and that commit go to
   `configs/FROZEN_CONFIG.sha256`. Step 8.2 refuses to run if the config's hash differs. Then STOP for Ashutosh.
+
+## Step 8.1 — dev ablations, config FROZEN (Tue 27 Oct, 19:12–19:35)
+
+**Done** (`scripts/ablation_8.py` → `results/reports/ablation_8.1.md`, `ablation_8.1_rows.csv`; 7 experiments rows at
+clean commit `76697cc`; plan pre-registered in `dde89b0` before any result)
+- Per-camera-per-type centering implemented (`appearance.center_groups: camera_type`; means per camera AND frame/crop
+  over all footage in `camera_type_means.parquet`; hand-computed test). Re-running collect_appearance left every
+  existing file byte-identical (SHA-256 checked). Variant appearance indexes built with `build_one` under
+  `artifacts/indexes_8.1/` (gitignored, ~1.5 GB).
+
+| variant (dev, 12 specific + 5 category) | median s [95% CI] | hits | R@10 | mAP@50 |
+|---|---|---|---|---|
+| **w0 raw (final)** | 401 [99, 7,174] | 9/12 | 0.333 | 0.110 |
+| w2 raw | 306 [173, 920] | 11/12 | 0.500 | 0.139 |
+| w2 per-type centered | 378 [255, 1,261] | 10/12 | 0.250 | 0.111 |
+| w0 per-type centered (descriptive) | 1,069 | 7/12 | 0.250 | 0.083 |
+| w0 raw, crops none (descriptive) | 13,515 | 5/12 | 0.083 | 0.043 |
+| w0 raw, crops detection_then_motion (descriptive) | 7,012 | 6/12 | 0.417 | 0.084 |
+| w0 raw, exact brute force (descriptive) | 394 | 9/12 | 0.333 | 0.110 |
+
+- **A (action weight 0 vs 2): 8 / 1 / 8 → keep 0.** w2 is better on both family means (specific +2,074 s
+  [−176, +5,239]; category AP@50 +0.029 [−0.040, +0.102]), on the median (306 vs 401 s) and on hits (11 vs 9), but the
+  rule needs wins > losses: a tie by one query. w2 turns two misses into hits (dev-s05 IR, dev-s10) and adds 20–300 s on
+  six found queries. **The rule decided as written; flagged for Ashutosh at the freeze stop.** 7.4's tuning rule chose 2.
+- **B (per-type centering vs raw, at w2): 3 / 1 / 13 → keep raw** (both family means worse; CIs exclude 0). It also
+  loses at w0 (5/2/10, reviewer's check). Centering is rejected in both forms.
+- Crop sources (descriptive): motion crops stay clearly best at the final settings (Gate 4.4 decision unchanged).
+- HNSW vs exact (descriptive): metrics equal except dev-s06 (+13 s, same rank). **On dev, HNSW is slower than exact:
+  27.6 vs 12.0 ms median search**, because a split restriction is a time filter and the exact path over ~20k in-range
+  vectors is cheap. Unfiltered (the API), see the latency below.
+- **Independent review (subagent, commit 3fccf5f):** recomputed A and B with its own code (identical), checked the
+  centered vectors on disk (G330/G424/G474: unit norm, differ from raw, equal its own recomputation to 6e-8), that the
+  main raw index equals `vectors.npy`, one-factor changes, dev-only access, git order of pre-registration → results. No
+  problem that could change a decision. Fixed: `small_n` moved to config (`metrics.small_n: 5`), labels follow
+  `category_k`, PROGRESS times. Not changed (rule as written): misses by both variants count as ties in W/T/L but their
+  seconds still enter the specific mean (gate.py); excluding them changes neither decision.
+- **Frozen config:** `search.weights.action: 0` (action branch not searched; LanguageBind still loaded at API start-up),
+  appearance pad/motion/raw, ef_search 800, k 200; everything else unchanged. Commit `b7a0fbd`;
+  `configs/FROZEN_CONFIG.sha256` = `9917a937…5f09` (commit `1635c50`).
+- **API latency at the frozen config** (`results/reports/api_frozen.md`, unfiltered, 20 queries): **median 36 ms, p95
+  39 ms** (search 24.9 ms, appearance only). This is the deck number (decision 4). ef 800 with both branches: 62 / 65 ms.
+- **8.2 / 8.3 prepared, not run on test:** `scripts/test_run.py` (clean tree, frozen-hash and query-hash checks, a
+  started-marker so it runs once, the only file allowed to read test) and `scripts/failures_8.py` (reads only 8.2
+  outputs, keyframes and proxies). `run_split` / `category_truth` / `query_rows` now take loaded data through thin
+  guarded wrappers; regenerated `baselines_3.2.md` and `consistency_8.md` are identical. **Rehearsed on dev** (`--rehearse`,
+  scratch output, nothing logged): reproduces the w0 dev numbers and the 3.2 baselines; both charts viewed by Claude.
+
+**Open issues**
+- Ashutosh: confirm the frozen config (A was a one-query tie against the variant with better summary numbers) before 8.2.
+- Rows from the first consistency run (be0128a-dirty, 4 rows) stay in experiments.csv; the clean re-run was --no-log.
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
