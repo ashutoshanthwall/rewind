@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **7 done → next: consistency check (dev, weight 0, ef 800), then 8** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **8 prep done (ef 800, latency 62 ms, consistency OK) → 8.1 dev ablations** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2471,6 +2471,74 @@ measured numbers:
   random vectors). The crossover between 175k and 1M was not measured, so say "beyond a few hundred thousand to ~1M
   vectors", not an exact point;
 - also: drop GoogleTest and cpp-httplib (Phase 7 summary, flag 4).
+
+## Phase 8 preparation — ef 800, API latency, consistency check (Tue 27 Oct, ~19:00–19:40)
+
+**Done**
+- `search.ef_search: 800` (both branches; engine searches pass ef per call, so no index rebuild). Commit `be0128a`.
+- **API latency at ef 800** (`scripts.api_latency --report results/reports/api_ef800.md`, 20 queries, weights
+  appearance 1 / action 2): **median 62 ms, p95 65 ms** (min 56, max 66); server side encode 7.7, search 42.5,
+  fusion 8.6 ms; start-up 9.5 s. At ef 200 it was 46 / 48 ms. This is the number for the deck (decision 4), **if the
+  frozen config keeps the action branch**; with action weight 0 only one branch is searched (re-measure after 8.1).
+- **Consistency check** (`scripts/consistency_8.py` → `results/reports/consistency_8.md`, dev, action weight 0,
+  pad/motion/raw):
+
+| run | median s | hits | R@10 | mAP@50 |
+|---|---|---|---|---|
+| Gate 4.4 (report) | 394 | 9/12 | 0.333 | 0.110 |
+| engine, **exact** brute force | 394.5 | 9/12 | 0.333 | 0.110 |
+| NumPy Index re-run | 394.5 | 9/12 | 0.333 | 0.110 |
+| engine, **HNSW ef 800** | 401.0 | 9/12 | 0.333 | 0.110 |
+
+  - The engine → fusion → clips path reproduces Gate 4.4 **to the second** when search is exact: every query's
+    seconds / hit rank / AP@50 is identical. Single-branch fusion is an affine z-score of the same hits, so grouping
+    and ranking are unchanged, as expected.
+  - HNSW differs on **one query only**, dev-s06: 371 s vs 358 s, **same hit rank 25**. Root cause, checked: at ef 800
+    the approximate top 200 swaps 5 of the 200 exact vectors (recall 0.975 on this query), which lengthens two G330
+    clips ranked before the hit by 10 s and 3 s. The 12-query median is the mean of the 6th and 7th values, so it moves
+    394.5 → 401.0. This is the designed approximation, not a pipeline bug: nothing fixed, carried on (Ashutosh's
+    stop condition was a mismatch needing a fix).
+- **Tuning vs dev gap explained** (engine, weight 0; same report):
+  1. **Misses decide the median.** Tuning misses 5 of 6 specific queries, dev 3 of 12. With n = 6 the median is the
+     mean of the 3rd and 4th values, both misses (miss cost = clip list + full review of the split, 17,402 s of
+     tuning footage) → 18,290 s. Dev's 6th / 7th values are hits → ~400 s.
+  2. **Camera mix.** 6 of 12 dev specific queries are on G330 (the indoor camera; all 6 found, hit ranks 2–27);
+     tuning has **no** specific query on G330. Outside G330: dev 3/6 found, tuning 1/6.
+  3. **Hit-list depth.** Tuning has twice the vectors (40,789 vs 20,564; 4.83 h vs 3.50 h, cameras 0.67–0.92 h each
+     vs 0.58 h each), so k = 200 covers 0.49 % vs 0.97 % of the split. For every tuning miss the best vector inside
+     the true event ranks 374–3,553 (dev misses: 487–1,095), i.e. no event vector enters the hit list at all.
+  4. Not the cause: IR share is similar (0.92/4.83 h = 19 % vs 0.58/3.50 h = 17 %; 1 vs 2 IR queries); qtype mix
+     is balanced in both (2/2/2 vs 4/4/4). Footage size only scales the miss cost (17.4k vs 12.6k s).
+  Consequence: tuning-split choices (7.4 action weight) rest on 6 queries, 5 of which no setting can find at
+  weight 0; dev is the more informative split for 8.1, and test (70 % of footage, more vectors per query) will
+  likely behave more like tuning than dev on misses.
+
+**Open issues**
+- dev-s11 is a hit (rank 81) although its best in-event vector ranks 488: a neighbouring frame's clip (±5 s
+  context) overlaps the event. Hit = clip overlap, by design (CLAUDE.md 1.10).
+
+## Step 8.1 — operational plan, PRE-REGISTERED (Tue 27 Oct, ~19:45; committed before any 8.1 result)
+
+Nothing of 8.1 has been run. The two pre-registered comparisons (decision 3 above; "Step 8.1 ablation list") each
+say "at the config's other values". Read literally, that is the config committed when they were written:
+pad/motion/raw, action weight 2, ef 800. So **each comparison changes one thing from the committed config**, on all
+17 dev queries, through the engine → fusion → clips path (HNSW ef 800, k 200 per branch, ranges of the dev footage):
+- **A (decision 3):** simple = action weight **0**, complex = action weight **2**; both raw.
+- **B (centering):** simple = **raw** (no centering), complex = **per-camera-per-type** centering (each vector minus the
+  mean of its camera AND type, frame vs crop, over all footage of the variant, no labels; re-normalised); both at
+  action weight 2. Implemented as `appearance.center_groups: camera_type` with `mean_center: true`; appearance
+  indexes of the variant built with the same `build_one` code into a separate directory.
+- Each decided by `paired_decision(simple, complex)` **as written**; no tie-break (different complexity).
+- **Final config = A's choice × B's choice.** If that cell is (weight 0, per-type centering), it was not one of the
+  two compared pairs: reported as such at the freeze stop.
+- **Descriptive only (no decision):** the fourth cell (weight 0 × per-type); crop_source none / motion /
+  detection_then_motion at the final weight and centering; HNSW vs exact brute force at the final config (metrics +
+  search latency per query); event branch: not applicable (dropped at Gate 6.2).
+- **Breakdowns per variant:** by kind × qtype and by modality: n, hits, median seconds with bootstrap 95 % CI, R@10
+  with CI, category mAP@50 with CI; cells with n < 5 marked **descriptive only**.
+- **Freeze:** the config with A and B applied (and, if B adopts per-type centering, the main indexes rebuilt) is
+  committed; the SHA-256 of `configs/config.yaml` (raw bytes, as `run_stamp`) and that commit go to
+  `configs/FROZEN_CONFIG.sha256`. Step 8.2 refuses to run if the config's hash differs. Then STOP for Ashutosh.
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
