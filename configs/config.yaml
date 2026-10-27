@@ -222,7 +222,7 @@ events:
     vehicle_starts: [start, starts, starting, drives off, pulls away, leaves, departs]
 search:
   k_per_index: 200
-  ef_search: 200                    # must be >= k
+  ef_search: 800                    # must be >= k. Both branches. Ashutosh, 27 Oct (PROGRESS.md "decisions after Phase 7", 2): recall@200 ~0.99 vs 0.94 at 200 (step 7.2)
   fusion: zscore_weighted
   weights: {appearance: 1.0, action: 2, events: 0}       # action: step 7.4 pre-registered rule on tuning (PROGRESS.md;
                                                           # all R@10 tied at 0, median-seconds tie-break). events 0: dropped
