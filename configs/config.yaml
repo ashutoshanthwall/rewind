@@ -257,6 +257,16 @@ ui:
   default_window_minutes: 10
   fallback_motion_k: 12             # motion-ranked segments offered when the event is not in the list (step 3.2
                                     # baseline: segments of baselines.segment_s by mean MOG2 activity)
+  # Camera place labels for the camera filter (UI only; search ignores them). From frames viewed by Claude (8.3
+  # thumbnails, 9.1 screenshots) and PROGRESS (G330 = indoor gym). Finding F6: excluding indoor cameras is the
+  # workaround when crop matches ignore scene context.
+  cameras:
+    G330: {place: indoor, note: gym}
+    G336: {place: outdoor, note: flagpole roundabout}
+    G340: {place: outdoor, note: parking lot}
+    G424: {place: outdoor, note: parking lot}
+    G436: {place: outdoor, note: road to main entrance}
+    G474: {place: outdoor, note: flagpole roundabout}        # thermal IR (shown by the IR badge)
 benchmark:
   # step 7.2 (scripts/benchmark_engine.py): HNSW vs exact brute force; measurement settings, not search settings
   ef_sweep: [200, 300, 400, 600, 800]   # >= search.k_per_index

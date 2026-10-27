@@ -147,6 +147,9 @@ class Rewind:
         self.thumb = lru_cache(maxsize=self.ui["thumb_cache"])(self._thumb)
         self.cameras = sorted({v.camera_id for v in self.videos.values()})
         self.modality = {v.camera_id: v.modality for v in self.videos.values()}
+        missing = sorted(set(self.cameras) - set(self.ui["cameras"]))
+        if missing:                                         # checked at start-up, not per request
+            raise ValueError(f"config ui.cameras has no place label for cameras {missing}")
         t = time.perf_counter()
         self.engine = Engine(EngineConfig.from_config(self.cfg), {b: branch_model(self.cfg, b) for b in self.branches},
                              self.branches)
@@ -184,7 +187,7 @@ class Rewind:
 
     def footage(self) -> dict:
         spans = merged_spans(self.videos.values(), self.join_s)
-        cams = [{"camera": c, "modality": self.modality[c],
+        cams = [{"camera": c, "modality": self.modality[c], **self.ui["cameras"][c],
                  "hours": round(sum((b - a).total_seconds() for a, b in spans[c]) / 3600, 2),
                  "spans": [[a.isoformat(), b.isoformat()] for a, b in spans[c]]} for c in self.cameras]
         return {"cameras": cams, "start": min(v.start_time for v in self.videos.values()).isoformat(),

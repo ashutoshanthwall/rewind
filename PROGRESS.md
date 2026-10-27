@@ -2742,6 +2742,19 @@ encoders, motion scores). A server is running now from this session: PID in `res
 **Open issues / for Ashutosh (👤 9.1):** try ~10 of your own queries; note anything slow or confusing. Not tested:
 dark mode by eye, narrow phone widths, Firefox. Action-branch "matched by" is never shown (weight 0).
 
+## Step 9.1 addendum — camera filter made prominent (Tue 27 Oct, ~21:10; after Finding F6)
+
+- Cameras moved to their own labelled row under the search box: "Untick a camera to leave it out. Wrong place in the
+  results (e.g. the indoor gym for an outdoor event)? Leave those cameras out." Quick filters: All cameras · Outdoor
+  only · Indoor only · RGB only (no thermal). Chips show place + note (config `ui.cameras`: G330 indoor gym, the rest
+  outdoor; from viewed frames); unticked chips are struck through. Every result card has "Leave out <camera> and search
+  again"; the coverage line names left-out cameras; the "Not in the list?" panel offers "Outdoor cameras only" when the
+  selection mixes places. A missing camera label stops the API at start-up.
+- **Bug found and fixed while testing:** "Leave out" first unticked every camera (it read the excluded camera's
+  checkbox for all cameras), so the re-search was refused and old results stayed on screen. Checked after the fix in
+  headless Chrome: F6 query → leave out G330 → no G330 in results, coverage "Searched 20.8 h … across 5 cameras … (left
+  out: G330)", only the G330 chip struck through, link updated (viewed by Claude). Tests 396 pass.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
@@ -2786,9 +2799,40 @@ dark mode by eye, narrow phone widths, Firefox. Action-branch "matched by" is ne
   perfect witness), so it is an upper bound for a real, noisy witness estimate. Motivates the UI's optional time
   window (Phase 9). A test claim would need a new pre-registered evaluation, which the single-run rule rules out here.
 
+- **F6 — Crop matches ignore scene context (Ashutosh's UI test, 27 Oct; diagnostic by Claude, frozen search unchanged).**
+  Query **"a person in dark jacket carries a box outside a building"** (all footage, all cameras) returned two
+  **indoor** G330 (gym) clips as the top 2. Top 10 (frozen config, API):
+
+  | # | camera | wall clock | matched by | crop cos | full-frame cos (same frame): query / "outside a building" / "inside a gym" |
+  |---|---|---|---|---|---|
+  | 1 | **G330 (indoor gym)** | 11 Mar 16:16:53–17:03 | motion crop (93×66 px) | 0.312 | 0.051 / **0.072** / **0.235** |
+  | 2 | **G330 (indoor gym)** | 7 Mar 17:07:09–17:19 | motion crop (57×75 px) | 0.312 | 0.036 / **0.070** / **0.251** |
+  | 3 | G436 | 11 Mar 16:18:04–18:14 | motion crop | 0.310 | 0.053 / 0.159 / 0.139 |
+  | 4 | G336 | 7 Mar 17:04:00–04:31 | motion crop | 0.310 | 0.080 / 0.158 / 0.147 |
+  | 5 | G340 | 11 Mar 11:31:07–31:24 | motion crop | 0.328 | 0.121 / 0.208 / 0.160 |
+  | 6–10 | G340, G436, G436, G340, G436 | — | motion crops | 0.297–0.301 | 0.048–0.131 / 0.127–0.226 / 0.118–0.152 |
+
+  - Every top-10 hit is a motion crop; crop cosines are nearly flat (0.297–0.328), so they cannot separate indoor from
+    outdoor. The same frames' full-frame vectors do carry the scene: "outside a building" scores the G330 frames 0.070–0.072
+    vs 0.127–0.226 outdoors; "inside a gym" 0.235–0.251 vs 0.118–0.160. Ranking never uses the frame vector when a
+    crop is the hit, and full-frame cosines (~0.05–0.13) sit far below crop cosines (~0.30), so frames rarely enter
+    the top 200 at all. Viewed by Claude (n = 3 thumbnails): #1 / #2 are inside the gym (a dark box-like object next to
+    a person in a dark jacket; a small object at the far table); #3 is a small crop near the outdoor entrance.
+  - Also: #5 has the best single cosine (0.328) but ranks 5th: clip score = mean of the top 3 hits, and it has one.
+  - One query, so a hypothesis supported by a diagnostic, not a measured effect. **Workaround (UI):** leave indoor
+    cameras out (camera row, "Outdoor only", or "Leave out G330" on a card). With G330 left out, the top results are
+    outdoor clips whose matched crops are tiny; not checked for whether they show the described event.
+  - **Not changed:** the frozen search. Follow-up in "Later": context-aware crop scoring.
+
 ---
 
 ## Later (deferred, not in current scope)
+
+- **Context-aware crop scoring (from Finding F6; Ashutosh, 27 Oct).** Score a crop hit as crop similarity + w × the
+  full-frame (pad) similarity of the same frame, so scene words ("outside", "at the entrance") can count when the match
+  is a crop. Pre-register the rule and the w grid before any result; **evaluate on dev only, labelled exploratory**
+  (test was read once at 8.2). Report the F6 query as a case, plus the dev specific/category metrics by qtype, and watch
+  for small-object queries losing to scene-dominated frames. Not scheduled for 30 Oct.
 
 - **Stop/start rule robust to box jitter (from Finding F1; Ashutosh, 26 Oct).** Smooth box jitter (e.g. a median or
   Kalman-smoothed box centre, bottom-centre instead of centre, hysteresis with two speed thresholds) and ignore

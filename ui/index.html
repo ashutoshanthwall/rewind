@@ -45,6 +45,15 @@
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; user-select: none; }
   .chip input { margin: 0; }
+  .chip.off { opacity: .55; text-decoration: line-through; }
+  .place { font-size: 11px; color: var(--ink-3); }
+  .camrow { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .camhead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .camhead .big { margin: 0; }
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .quick button { font-size: 13px; padding: 4px 10px; }
+  .linkbtn { border: none; background: none; padding: 0; color: var(--accent); font-size: 12px; text-align: left; cursor: pointer; }
+  .linkbtn:hover { text-decoration: underline; }
   .badge { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 5px; border: 1px solid var(--ink-3); color: var(--ink-2); }
   .badge.ir { border-color: var(--ir); color: var(--ir); }
   .coverage { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
@@ -112,13 +121,25 @@
         <select id="win"></select>
       </div>
       <button type="button" id="clearWhen">Clear time</button>
-      <div class="field" style="flex: 1; min-width: 260px;">
-        <span>Cameras</span>
-        <div class="chips" id="cams"></div>
-      </div>
+      <div style="flex: 1"></div>
       <button class="primary" type="submit" id="go">Search</button>
     </div>
     <div class="hint" id="hint">If anyone remembers roughly when, add the time: a window narrows the search. Without it, all indexed footage is searched.</div>
+    <div class="camrow">
+      <div class="camhead">
+        <label class="big">Cameras</label>
+        <span class="note">Untick a camera to leave it out. Wrong place in the results (e.g. the indoor gym for an outdoor event)? Leave those cameras out.</span>
+      </div>
+      <div class="camhead">
+        <div class="quick" id="quick">
+          <button type="button" data-q="all">All cameras</button>
+          <button type="button" data-q="outdoor">Outdoor only</button>
+          <button type="button" data-q="indoor">Indoor only</button>
+          <button type="button" data-q="rgb">RGB only (no thermal)</button>
+        </div>
+      </div>
+      <div class="chips" id="cams"></div>
+    </div>
   </form>
 
   <div id="status"></div>
@@ -158,10 +179,14 @@ async function init() {
   const f = S.footage;
   S.k = f.ui.default_clips;
   $("cams").innerHTML = f.cameras.map((c) => `
-    <label class="chip" title="${c.hours} h indexed">
+    <label class="chip" title="${esc(c.note || "")} · ${c.hours} h indexed">
       <input type="checkbox" value="${esc(c.camera)}" checked> ${esc(c.camera)}
+      <span class="place">${esc(c.place)}${c.note ? " · " + esc(c.note) : ""}</span>
       ${c.modality === "ir" ? '<span class="badge ir" title="thermal infrared">IR</span>' : ""}
     </label>`).join("");
+  document.querySelectorAll("#cams input").forEach((i) => i.addEventListener("change", chipStyle));
+  document.querySelectorAll("#quick [data-q]").forEach((b) => b.addEventListener("click", () => quick(b.dataset.q)));
+  chipStyle();
   $("win").innerHTML = f.ui.window_minutes.map((m) => `<option value="${m}" ${m === f.ui.default_window_minutes ? "selected" : ""}>± ${m} min</option>`).join("");
   $("when").min = f.start.slice(0, 16);
   $("when").max = f.end.slice(0, 16);
@@ -171,8 +196,24 @@ async function init() {
   const u = new URLSearchParams(location.search);
   if (u.get("when")) $("when").value = u.get("when");
   if (u.get("win")) $("win").value = u.get("win");
-  if (u.get("cams")) { const want = u.get("cams").split(","); document.querySelectorAll("#cams input").forEach((i) => { i.checked = want.includes(i.value); }); }
+  if (u.get("cams")) { const want = u.get("cams").split(","); setCams((c) => want.includes(c.camera)); }
   if (u.get("q")) { $("q").value = u.get("q"); search(selection()); }
+}
+
+const cam = (id) => S.footage.cameras.find((c) => c.camera === id);
+function chipStyle() { document.querySelectorAll("#cams input").forEach((i) => i.closest(".chip").classList.toggle("off", !i.checked)); }
+function setCams(keep) { document.querySelectorAll("#cams input").forEach((i) => { i.checked = keep(cam(i.value)); }); chipStyle(); }
+function quick(q) {
+  if (q === "all") setCams(() => true);
+  if (q === "outdoor") setCams((c) => c.place === "outdoor");
+  if (q === "indoor") setCams((c) => c.place === "indoor");
+  if (q === "rgb") setCams((c) => c.modality !== "ir");
+  if ($("q").value.trim() && S.data) search(selection());     // re-run a search already on screen
+}
+function leaveOut(id) {
+  const on = new Set(selection().cams);                 // current ticks, read before any is changed
+  setCams((c) => c.camera !== id && on.has(c.camera));
+  search(selection());
 }
 
 function selection() {
@@ -213,7 +254,8 @@ async function search(sel) {
 
 // ---- results ----
 function coverageHtml(cov, sel) {
-  const where = sel.all ? "all cameras" : sel.cams.join(", ");
+  const out = S.footage.cameras.map((c) => c.camera).filter((c) => !sel.cams.includes(c));
+  const where = sel.all ? "all cameras" : `${sel.cams.join(", ")} (left out: ${out.join(", ")})`;
   const when = sel.t0 === null ? "all indexed time" : `${dayLabel(day(sel.t0))}, ${hm(sel.t0)}–${hm(sel.t1)} (${sel.when.slice(11)} ± ${sel.win} min)`;
   return `<div class="panel">
     <div class="coverage"><strong>${esc(cov.line)}</strong>
@@ -243,6 +285,7 @@ function render() {
     el.addEventListener("click", () => pick(+el.dataset.rank));
     el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(+el.dataset.rank); } });
   });
+  document.querySelectorAll("[data-leave]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); leaveOut(b.dataset.leave); }));
   if ($("more")) $("more").onclick = () => { S.k = Math.min(S.footage.ui.max_clips, S.k + S.footage.ui.default_clips); search(S.sel); };
   $("replay").onclick = () => replay();
   $("playon").onclick = () => { S.playOn = true; $("video").play(); };
@@ -265,10 +308,12 @@ function cardHtml(c) {
     <img loading="lazy" alt="Frame from ${esc(c.camera)} at ${hms(t0)}" src="/thumb?video_id=${c.video_id}&t=${t.toFixed(1)}${box}">
     <div class="body">
       <div class="top"><span class="rank">#${c.rank}</span> ${esc(c.camera)}
-        ${c.modality === "ir" ? '<span class="badge ir">IR</span>' : '<span class="badge">RGB</span>'}</div>
+        ${c.modality === "ir" ? '<span class="badge ir">IR</span>' : '<span class="badge">RGB</span>'}
+        <span class="place">${esc(cam(c.camera).place)}${cam(c.camera).note ? " · " + esc(cam(c.camera).note) : ""}</span></div>
       <div>${dayLabel(day(t0))} · ${hms(t0)}–${hms(t1)} <span class="muted">(${dur((t1 - t0) / 1000)})</span></div>
       <div class="bar" title="Similarity, scaled from the lowest to the highest candidate in this list (fused score ${c.score})"><div style="width:${(rel * 100).toFixed(0)}%"></div></div>
       <div class="muted">Matched by: ${esc(c.matched_by.join(", "))}${what ? " — " + esc(what) : ""}</div>
+      ${S.sel.cams.length > 1 ? `<button type="button" class="linkbtn" data-leave="${esc(c.camera)}">Leave out ${esc(c.camera)} and search again</button>` : ""}
     </div></div>`;
 }
 
@@ -345,6 +390,8 @@ function fallbackHtml(empty) {
   if (sel.t0 !== null) h += `<button type="button" data-act="notime">Search all times</button>`;
   else h += `<button type="button" data-act="addtime">Add an approximate time</button>`;
   if (!sel.all) h += `<button type="button" data-act="allcams">Search all cameras</button>`;
+  const places = new Set(sel.cams.map((c) => cam(c).place));
+  if (places.has("indoor") && places.has("outdoor")) h += `<button type="button" data-act="outdoor">Outdoor cameras only</button>`;
   if (!zero) h += `<button type="button" data-act="motion">Review by motion in this selection</button>`;
   h += `</div><div id="motion"></div></div>`;
   return h;
@@ -356,7 +403,8 @@ function bindFallback() {
     if (act === "widen") { const opts = S.footage.ui.window_minutes; $("win").value = opts.find((m) => m > S.sel.win); search(selection()); }
     if (act === "notime") { $("when").value = ""; search(selection()); }
     if (act === "addtime") { $("when").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    if (act === "allcams") { document.querySelectorAll("#cams input").forEach((i) => { i.checked = true; }); search(selection()); }
+    if (act === "allcams") { setCams(() => true); search(selection()); }
+    if (act === "outdoor") { setCams((c) => c.place === "outdoor"); search(selection()); }
     if (act === "motion") motionList();
   }));
 }

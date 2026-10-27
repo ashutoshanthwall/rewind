@@ -130,7 +130,8 @@ def test_endpoints_with_toy_rewind(tmp_path, monkeypatch):
     import rewind.api.app as appmod
     rw = motion_toy()
     rw.default_clips, rw.max_clips = 20, 100
-    rw.ui = {"window_minutes": [5, 10], "default_window_minutes": 10, "fallback_motion_k": 2, "thumb_width": 320}
+    rw.ui = {"window_minutes": [5, 10], "default_window_minutes": 10, "fallback_motion_k": 2, "thumb_width": 320,
+             "cameras": {"G1": {"place": "indoor", "note": "gym"}, "G2": {"place": "outdoor", "note": "road"}}}
     rw.join_s = 1.0
     rw.modality = {"G1": "rgb", "G2": "ir"}
     clip = tmp_path / "a.mp4"
@@ -139,6 +140,7 @@ def test_endpoints_with_toy_rewind(tmp_path, monkeypatch):
     c = TestClient(create_app(rw=rw))
     f = c.get("/footage").json()
     assert [x["camera"] for x in f["cameras"]] == ["G1", "G2"] and f["cameras"][1]["modality"] == "ir"
+    assert f["cameras"][0]["place"] == "indoor" and f["cameras"][1]["note"] == "road"
     assert f["cameras"][0]["hours"] == round(600 / 3600, 2) and f["branches"] == ["appearance"]
     assert f["ui"] == {"window_minutes": [5, 10], "default_window_minutes": 10, "default_clips": 20, "max_clips": 100}
     m = c.get("/motion").json()
