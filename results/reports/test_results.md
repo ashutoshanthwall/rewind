@@ -6,7 +6,7 @@ Test footage: 200 clips, 16.67 h over 6 cameras; 34 queries (24 specific, 10 cat
 
 ## Summary
 
-| system | specific n | median s watched [CI] | mean s | worst s | R@1 [CI] | R@5 [CI] | R@10 [CI] | category mAP@10 [CI] | category mAP@50 [CI] | category instance recall@10 | category instance recall@50 |
+| system | specific n | median s watched [CI] | mean s | worst s | R@1 [CI] | R@5 [CI] | R@10 [CI] | category mAP@10 [CI] (RGB) | category mAP@50 [CI] (RGB) | category instance recall@10 (RGB) | category instance recall@50 (RGB) |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | rewind | 24 | 1,173 [376, 61,036] | 28,277 | 61,532 | 0.000 [0.000, 0.000] | 0.042 [0.000, 0.125] | 0.042 [0.000, 0.125] | 0.252 [0.133, 0.378] | 0.140 [0.088, 0.202] | 0.028 | 0.079 |
 | sequential | 24 | 30,507 [27,339, 33,359] | 30,282 | 34,536 | 0.000 [0.000, 0.000] | 0.000 [0.000, 0.000] | 0.007 [0.000, 0.021] | 0.225 [0.133, 0.319] | 0.174 [0.097, 0.254] | 0.016 | 0.082 |
@@ -20,12 +20,12 @@ Rewind found 13 of 24 specific events in its clip list (a miss costs the list + 
 
 ## Headline: seconds watched before the first correct clip, Rewind vs each baseline (paired, specific)
 
-| vs | rewind median s | other median s | rewind faster | ties | rewind slower | median paired saving s [CI] | ratio of medians |
-|---|---|---|---|---|---|---|---|
-| sequential | 1,173 | 30,507 | 13 | 0 | 11 | +25,620 [-27,938, +30,097] | 26.0x |
-| random | 1,173 | 29,979 | 13 | 0 | 11 | +20,704 [-29,978, +28,632] | 25.6x |
-| witness | 1,173 | 2,977 | 13 | 0 | 11 | +1,404 [-58,082, +2,481] | 2.5x |
-| motion | 1,173 | 20,003 | 13 | 0 | 11 | +1,879 [-32,636, +10,469] | 17.1x |
+| vs | rewind median s | other median s | rewind faster | ties | rewind slower | median paired saving s [CI] |
+|---|---|---|---|---|---|---|
+| sequential | 1,173 | 30,507 | 13 | 0 | 11 | +25,620 [-27,938, +30,097] |
+| random | 1,173 | 29,979 | 13 | 0 | 11 | +20,704 [-29,978, +28,632] |
+| witness | 1,173 | 2,977 | 13 | 0 | 11 | +1,404 [-58,082, +2,481] |
+| motion | 1,173 | 20,003 | 13 | 0 | 11 | +1,879 [-32,636, +10,469] |
 
 ## Specific queries by qtype (median seconds watched; Rewind R@10)
 
@@ -43,7 +43,7 @@ Cells with fewer than 5 queries show the per-query values only ("descriptive, n 
 | moderate | 9 | 5 | 0.111 [0.000, 0.333] | 933 [263, 61,249] | 27,339 [25,734, 34,455] | 29,812 [22,386, 31,437] | 3,149 [2,517, 3,489] | 17,323 [4,202, 34,586] |
 | vague | 8 | 4 | 0.000 [0.000, 0.000] | 31,399 [376, 61,454] | 30,507 [28,430, 33,322] | 30,380 [28,696, 31,388] | 2,697 [2,114, 3,662] | 27,197 [22,527, 41,097] |
 
-### Specific queries by camera (headline metric; descriptive, small n)
+### Specific queries by camera (headline metric; cells with n < 5 are descriptive only)
 
 | camera_id | n | Rewind hits | Rewind R@10 [CI] | rewind median s [CI] | sequential median s [CI] | random median s [CI] | witness median s [CI] | motion median s [CI] |
 |---|---|---|---|---|---|---|---|---|
@@ -122,7 +122,7 @@ IR: Recall@k, hits and seconds-to-first-hit (recall-type, Gate 0.3); never preci
 
 Declared in PROGRESS.md (commit 383bfca) before any test read, run once in this same run: the frozen config with only `search.weights.action` = 2 (in memory; the config file and its hash are unchanged). **It cannot replace the primary result above, whatever the outcome.**
 
-| system | specific n | hits | median s watched [CI] | mean s | R@1 [CI] | R@5 [CI] | R@10 [CI] | category mAP@10 [CI] | category mAP@50 [CI] |
+| system | specific n | hits | median s watched [CI] | mean s | R@1 [CI] | R@5 [CI] | R@10 [CI] | category mAP@10 [CI] (RGB) | category mAP@50 [CI] (RGB) |
 |---|---|---|---|---|---|---|---|---|---|
 | rewind | 24 | 13 | 1,173 [376, 61,036] | 28,277 | 0.000 [0.000, 0.000] | 0.042 [0.000, 0.125] | 0.042 [0.000, 0.125] | 0.252 [0.133, 0.378] | 0.140 [0.088, 0.202] |
 | rewind_secondary_w2 | 24 | 16 | 695 [607, 31,923] | 21,145 | 0.000 [0.000, 0.000] | 0.083 [0.000, 0.208] | 0.125 [0.000, 0.250] | 0.120 [0.057, 0.189] | 0.104 [0.055, 0.163] |
@@ -131,15 +131,30 @@ Secondary found 16 of 24 specific events.
 
 Secondary vs each baseline (paired, specific; seconds watched):
 
-| vs | rewind_secondary_w2 median s | other median s | rewind_secondary_w2 faster | ties | rewind_secondary_w2 slower | median paired saving s [CI] | ratio of medians |
-|---|---|---|---|---|---|---|---|
-| sequential | 695 | 30,507 | 16 | 0 | 8 | +26,722 [-1,665, +30,991] | 43.9x |
-| random | 695 | 29,979 | 16 | 0 | 8 | +27,886 [-5,725, +29,643] | 43.2x |
-| witness | 695 | 2,977 | 16 | 0 | 8 | +1,889 [-29,286, +2,239] | 4.3x |
-| motion | 695 | 20,003 | 16 | 0 | 8 | +4,461 [-13,538, +16,231] | 28.8x |
+| vs | rewind_secondary_w2 median s | other median s | rewind_secondary_w2 faster | ties | rewind_secondary_w2 slower | median paired saving s [CI] |
+|---|---|---|---|---|---|---|
+| sequential | 695 | 30,507 | 16 | 0 | 8 | +26,722 [-1,665, +30,991] |
+| random | 695 | 29,979 | 16 | 0 | 8 | +27,886 [-5,725, +29,643] |
+| witness | 695 | 2,977 | 16 | 0 | 8 | +1,889 [-29,286, +2,239] |
+| motion | 695 | 20,003 | 16 | 0 | 8 | +4,461 [-13,538, +16,231] |
 
 Secondary vs primary (paired, specific; informational, no decision):
 
-| vs | rewind_secondary_w2 median s | other median s | rewind_secondary_w2 faster | ties | rewind_secondary_w2 slower | median paired saving s [CI] | ratio of medians |
-|---|---|---|---|---|---|---|---|
-| rewind | 695 | 1,173 | 4 | 0 | 20 | -352 [-706, -270] | 1.7x |
+| vs | rewind_secondary_w2 median s | other median s | rewind_secondary_w2 faster | ties | rewind_secondary_w2 slower | median paired saving s [CI] |
+|---|---|---|---|---|---|---|
+| rewind | 695 | 1,173 | 4 | 0 | 20 | -352 [-706, -270] |
+## Corrections after the run (wording only; no number changed) — 27 Oct 2026, asked by Ashutosh
+
+Edits made after the single run, to presentation only. No metric, row or query was recomputed or changed; checked
+mechanically: the multiset of numbers in this file before and after differs only by the removed ratio cells.
+1. **Removed the "ratio of medians" column** from the three paired tables (Rewind vs baselines; secondary vs baselines;
+   secondary vs primary). Reason: it was shown without a CI, beside paired-saving CIs that include zero, so it
+   overstated the difference (independent recompute, 27 Oct). Removed values, in table order: 26.0x, 25.6x, 2.5x, 17.1x, 43.9x, 43.2x, 4.3x, 28.8x, 1.7x.
+   The paired saving with its CI stays.
+2. **Camera-table heading** "descriptive, small n" → "cells with n < 5 are descriptive only". Reason: G424 (n = 6)
+   and G436 (n = 7) correctly carry CIs; the old heading called the whole table descriptive.
+3. **"(RGB)" added to the category columns of the two summary tables.** Reason: category ground truth is Kitware RGB
+   only (Gate 0.3); this was stated in the category section but not in the summaries.
+4. **`IR@k` → `instance_recall@k` in `results/reports/test_rows.csv`** (column names only). Reason: "IR" means
+   infrared elsewhere. `results/experiments.csv` keeps the key `IR@k` (append-only log, also used by the step 2.3 /
+   3.2 baseline rows): there, `IR@k` = category instance recall.

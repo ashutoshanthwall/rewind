@@ -1,4 +1,4 @@
-query_id,kind,qtype,specificity,modality,camera_id,instances,AP@10,AP@50,IR@10,IR@50,system,label_source,R@1,R@5,R@10,seconds,hit,hit_rank,n_clips,split
+query_id,kind,qtype,specificity,modality,camera_id,instances,AP@10,AP@50,instance_recall@10,instance_recall@50,system,label_source,R@1,R@5,R@10,seconds,hit,hit_rank,n_clips,split
 tes-c01,category,vehicle_event,vague,rgb,,590.0,0.08333333333333333,0.1562773670884255,0.003389830508474576,0.04745762711864407,rewind,,,,,,,,,
 tes-c02,category,vehicle_event,vague,rgb,,607.0,0.569047619047619,0.31497322702137304,0.011532125205930808,0.051070840197693576,rewind,,,,,,,,,
 tes-c03,category,action,vague,rgb,,47.0,0.3814285714285714,0.11951645044761175,0.1276595744680851,0.23404255319148937,rewind,,,,,,,,,
