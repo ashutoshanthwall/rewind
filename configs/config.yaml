@@ -255,6 +255,10 @@ ui:
   thumb_cache: 256                  # thumbnails kept in memory
   window_minutes: [5, 10, 30, 60]   # "around this time, ± minutes" choices; 10 = the witness baseline's window
   default_window_minutes: 10
+  deep_k: 800                       # "Search deeper" button in the fallback panel: hits per branch instead of
+                                    # search.k_per_index. A USER FALLBACK OUTSIDE THE TESTED CONFIGURATION (8.2 used
+                                    # k_per_index); dev, exploratory (pre-Phase-10 review, weakness-5): k = 800 found
+                                    # 11/12 vs 9/12. Must be <= search.ef_search
   fallback_motion_k: 12             # motion-ranked segments offered when the event is not in the list (step 3.2
                                     # baseline: segments of baselines.segment_s by mean MOG2 activity)
   # Camera place labels for the camera filter (UI only; search ignores them). From frames viewed by Claude (8.3

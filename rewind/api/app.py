@@ -4,9 +4,11 @@ Startup: config, manifest (videos, proxies), the engine's per-camera indexes of 
 (rewind/search/engine.py), the text encoders (CLIP for appearance, LanguageBind for action) and the fusion weights
 (search.weights; a TBD or negative weight stops the start-up).
 
-GET /search?q=...&cameras=G330,G336&start=2018-03-07T10:00:00&end=2018-03-07T11:00:00&k=20
-  q: the description; cameras: comma-separated (default all); start / end: wall-clock (camera clock, ISO, both or
-  neither); k: clips returned (default api.default_clips, at most api.max_clips). Each active branch with weight > 0
+GET /search?q=...&cameras=G330,G336&start=2018-03-07T10:00:00&end=2018-03-07T11:00:00&k=20&depth=800
+  q: the description; cameras: comma-separated (default all; repeats ignored, an empty list refused); start / end:
+  wall-clock (camera clock, ISO, both or neither); k: clips returned (default api.default_clips, at most
+  api.max_clips); depth: hits per branch, search.k_per_index (the tested configuration, default) or ui.deep_k (the
+  "search deeper" user fallback, outside the tested configuration; the response says so). Each active branch with weight > 0
   returns its top search.k_per_index vectors in the selection -> fusion and clips (rewind/search/fusion.py).
   Response: the clips (camera, video, proxy, span in the video and in wall-clock time, score, the branches that
   matched and each branch's best hit: time, cosine, z, and for appearance the box and crop type), coverage of the
@@ -20,6 +22,9 @@ GET /motion?cameras=...&start=...&end=...&k=...  the fallback when the event is 
 GET /thumb?video_id=...&t=...&box=x1,y1,x2,y2  JPEG of the proxy frame at t seconds (box in original pixels, drawn
   scaled to the proxy). Decoded on request and cached in memory only: no frame is written to disk.
 GET /proxy/{video_id}  the playback copy (MP4, faststart; byte ranges for seeking). Originals are never served.
+
+Only branches with a fusion weight > 0 are loaded (engine indexes and text encoder): with the frozen action weight 0
+the action indexes and LanguageBind are not needed (pre-Phase-10 review, ui-9; results identical).
 
 Threads: FastAPI runs these sync endpoints in a thread pool. Engine indexes have their own locks (C++); the GPU text
 encoders are used under one lock here.
@@ -138,10 +143,12 @@ class Rewind:
         self.durations = {vid: v.n_frames / v.fps for vid, v in self.videos.items()}
         self.proxies = {r[0]: r[1] for r in conn.execute("SELECT video_id, path FROM proxies")}
         self.frame_w = dict(conn.execute("SELECT video_id, width FROM videos").fetchall())
+        self.frame_h = dict(conn.execute("SELECT video_id, height FROM videos").fetchall())
+        self.last_t = {r[0]: (r[1] - 1) / r[2] for r in conn.execute("SELECT video_id, n_frames, fps FROM proxies")}
         conn.close()
         self.ui = self.cfg["ui"]
         self.join_s = self.cfg["ingest"]["max_name_duration_diff_s"]
-        seg_s = self.cfg["baselines"]["segment_s"]
+        self.segment_s = seg_s = self.cfg["baselines"]["segment_s"]
         self.motion = motion_scores(list(self.videos.values()), seg_s, REPO_ROOT / "artifacts")
         self.seg_video = {seg: v.video_id for v in self.videos.values() for seg in segments([v], seg_s)}
         self.thumb = lru_cache(maxsize=self.ui["thumb_cache"])(self._thumb)
@@ -150,18 +157,30 @@ class Rewind:
         missing = sorted(set(self.cameras) - set(self.ui["cameras"]))
         if missing:                                         # checked at start-up, not per request
             raise ValueError(f"config ui.cameras has no place label for cameras {missing}")
+        self.depths = (self.scfg.k, self.ui["deep_k"])         # tested depth first; deep_k is the user fallback
+        if self.ui["deep_k"] > self.cfg["search"]["ef_search"]:
+            raise ValueError("ui.deep_k must be <= search.ef_search")
+        s = self.cfg["sampling"]
+        self.sampling = (f"Footage is indexed at {s['appearance_fps']} frame/s with near-duplicate frames dropped (at "
+                         f"least one frame every {s['max_gap_s']} s), so very brief moments can be missing.")
         t = time.perf_counter()
-        self.engine = Engine(EngineConfig.from_config(self.cfg), {b: branch_model(self.cfg, b) for b in self.branches},
-                             self.branches)
+        self.live = [b for b in self.branches if self.weights[b] > 0]    # only these are loaded and searched
+        self.engine = Engine(EngineConfig.from_config(self.cfg), {b: branch_model(self.cfg, b) for b in self.live},
+                             self.live)
         a = self.cfg["appearance"]
-        self.encoders = {"appearance": Clip(a["model"], a["pretrained"])}
-        if "action" in self.branches:
+        self.encoders = {"appearance": Clip(a["model"], a["pretrained"])} if "appearance" in self.live else {}
+        if "action" in self.live:
             self.encoders["action"] = LanguageBind(REPO_ROOT / self.cfg["action"]["languagebind"]["weights_dir"])
         self.gpu = threading.Lock()
         self.load_s = time.perf_counter() - t
 
     def selection(self, cameras: str | None, start: str | None, end: str | None):
-        cams = self.cameras if not cameras else [c.strip() for c in cameras.split(",") if c.strip()]
+        if cameras is None:
+            cams = self.cameras
+        else:                                                # repeats ignored (each index searched once)
+            cams = list(dict.fromkeys(c.strip() for c in cameras.split(",") if c.strip()))
+            if not cams:
+                raise HTTPException(400, "cameras: empty list (leave the parameter out to search all cameras)")
         unknown = sorted(set(cams) - set(self.cameras))
         if unknown:
             raise HTTPException(400, f"unknown cameras {unknown}; known: {self.cameras}")
@@ -192,8 +211,9 @@ class Rewind:
                  "spans": [[a.isoformat(), b.isoformat()] for a, b in spans[c]]} for c in self.cameras]
         return {"cameras": cams, "start": min(v.start_time for v in self.videos.values()).isoformat(),
                 "end": max(v.end_time for v in self.videos.values()).isoformat(),
-                "ui": {**{k: self.ui[k] for k in ("window_minutes", "default_window_minutes")},
-                       "default_clips": self.default_clips, "max_clips": self.max_clips},
+                "ui": {**{k: self.ui[k] for k in ("window_minutes", "default_window_minutes", "deep_k")},
+                       "default_clips": self.default_clips, "max_clips": self.max_clips, "k_per_index": self.scfg.k},
+                "sampling": self.sampling,
                 "branches": [b for b in self.branches if self.weights[b] > 0], "note": NOTE}
 
     def motion_list(self, cams: list[str], t0: datetime | None, t1: datetime | None, k: int) -> dict:
@@ -210,6 +230,7 @@ class Rewind:
                         "wall_start": s.start.isoformat(), "wall_end": s.end.isoformat(),
                         "activity": round(float(sel[s]), 5)})
         return {"segments": out, "of": len(sel), "coverage": self.coverage(cams, t0, t1),
+                "segment_s": self.segment_s,
                 "note": "Segments with the most movement first (the motion-search baseline): a manual review aid, "
                         "not a match to the description."}
 
@@ -217,17 +238,21 @@ class Rewind:
         img = frame_at(REPO_ROOT / self.proxies[video_id], t)
         return draw_thumb(img, box, img.shape[1] / self.frame_w[video_id], self.ui["thumb_width"])
 
-    def search(self, q: str, cams: list[str], t0: datetime | None, t1: datetime | None, k: int) -> dict:
+    def search(self, q: str, cams: list[str], t0: datetime | None, t1: datetime | None, k: int,
+               depth: int | None = None) -> dict:
         t_start = time.perf_counter()
         text = " ".join(q.split())
         if not text:
             raise HTTPException(400, "empty query")
-        live = [b for b in self.branches if self.weights[b] > 0]
+        depth = self.scfg.k if depth is None else depth
+        if depth not in self.depths:
+            raise HTTPException(400, f"depth must be one of {list(self.depths)}")
+        live = self.live
         with self.gpu:
             z = {b: self.encoders[b].encode_text([text])[0] for b in live}
         t_enc = time.perf_counter()
         w0, w1 = (None, None) if t0 is None else (wall_seconds(t0), wall_seconds(t1))
-        hits = {b: self.engine.search(b, z[b], cameras=cams, t0=w0, t1=w1) for b in live}
+        hits = {b: self.engine.search(b, z[b], k=depth, cameras=cams, t0=w0, t1=w1) for b in live}
         t_search = time.perf_counter()
         clips = fuse(hits, self.weights, self.durations, self.scfg, top_n=k)
         out = []
@@ -242,6 +267,7 @@ class Rewind:
                 "best": {b: {f: clean(h.get(f)) for f in HIT_FIELDS[b]} for b, h in c.best.items()}})
         t_end = time.perf_counter()
         return {"query": text, "note": NOTE, "coverage": self.coverage(cams, t0, t1), "clips": out,
+                "depth": depth, "tested_config": depth == self.scfg.k, "sampling": self.sampling,
                 "methods": {b: sorted(set(h["method"])) if len(h) else [] for b, h in hits.items()},
                 "timing_ms": {"encode": round((t_enc - t_start) * 1000, 2),
                               "search": round((t_search - t_enc) * 1000, 2),
@@ -257,12 +283,12 @@ def create_app(config_path: Path = REPO_ROOT / "configs" / "config.yaml",
 
     @app.get("/search")
     def search(q: str, cameras: str | None = None, start: str | None = None, end: str | None = None,
-               k: int | None = Query(None, ge=1)):
+               k: int | None = Query(None, ge=1), depth: int | None = None):
         k = rw.default_clips if k is None else k
         if k > rw.max_clips:
             raise HTTPException(400, f"k must be <= {rw.max_clips}")
         cams, t0, t1 = rw.selection(cameras, start, end)
-        return rw.search(q, cams, t0, t1, k)
+        return rw.search(q, cams, t0, t1, k, depth)
 
     @app.get("/coverage")
     def coverage(cameras: str | None = None, start: str | None = None, end: str | None = None):
@@ -292,17 +318,22 @@ def create_app(config_path: Path = REPO_ROOT / "configs" / "config.yaml",
 
     @app.get("/thumb")
     def thumb(video_id: int, t: float, box: str | None = None):
-        v = video(video_id)
-        if not 0 <= t <= v.n_frames / v.fps:
-            raise HTTPException(400, f"t must be within 0..{v.n_frames / v.fps:.2f} s")
+        video(video_id)
+        last = rw.last_t[video_id]                           # time of the proxy's last frame
+        if not (np.isfinite(t) and 0 <= t <= last):
+            raise HTTPException(400, f"t must be within 0..{last:.2f} s (the last frame)")
         b = None
         if box:
             try:
                 b = tuple(float(x) for x in box.split(","))
             except ValueError:
                 raise HTTPException(400, "box: four numbers x1,y1,x2,y2")
-            if len(b) != 4:
-                raise HTTPException(400, "box: four numbers x1,y1,x2,y2")
+            if len(b) != 4 or not all(np.isfinite(b)):
+                raise HTTPException(400, "box: four finite numbers x1,y1,x2,y2")
+            w, h = rw.frame_w[video_id], rw.frame_h[video_id]   # clip to the frame (original pixels)
+            x1, x2 = sorted((min(max(b[0], 0), w), min(max(b[2], 0), w)))
+            y1, y2 = sorted((min(max(b[1], 0), h), min(max(b[3], 0), h)))
+            b = (x1, y1, x2, y2)
         return Response(rw.thumb(video_id, round(t, 1), b), media_type="image/jpeg",
                         headers={"Cache-Control": "max-age=3600"})
 

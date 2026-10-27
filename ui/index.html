@@ -10,7 +10,7 @@
 <title>Rewind</title>
 <style>
   :root {
-    --bg: #f6f6f4; --panel: #ffffff; --ink: #141413; --ink-2: #55544f; --ink-3: #8a8983; --line: #e2e1dc;
+    --bg: #f6f6f4; --panel: #ffffff; --ink: #141413; --ink-2: #55544f; --ink-3: #6b6a64; --line: #e2e1dc;
     --accent: #2a78d6; --accent-ink: #ffffff; --accent-soft: #e3eefb; --warn-soft: #fff4e0; --warn-line: #e8b860;
     --track: #ecebe6; --footage: #d5d4cd; --hit: #2a78d6; --hit-top: #eb6834; --ir: #6250d6;
   }
@@ -47,7 +47,11 @@
   .chip input { margin: 0; }
   .chip.off { opacity: .55; text-decoration: line-through; }
   .place { font-size: 11px; color: var(--ink-3); }
-  .camrow { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .camrow { margin: 14px 0 0; padding: 12px 0 0; border: none; border-top: 1px solid var(--line); min-width: 0; }
+  .camrow legend { padding: 0; font-weight: 600; float: left; margin: 0 10px 8px 0; }
+  .camrow legend + .camhead { margin-top: 0; }
+  .stale { opacity: .45; pointer-events: none; }
+  .deep { background: var(--warn-soft); border-color: var(--warn-line); }
   .camhead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
   .camhead .big { margin: 0; }
   .quick { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -125,9 +129,9 @@
       <button class="primary" type="submit" id="go">Search</button>
     </div>
     <div class="hint" id="hint">If anyone remembers roughly when, add the time: a window narrows the search. Without it, all indexed footage is searched.</div>
-    <div class="camrow">
+    <fieldset class="camrow">
+      <legend>Cameras</legend>
       <div class="camhead">
-        <label class="big">Cameras</label>
         <span class="note">Untick a camera to leave it out. Wrong place in the results (e.g. the indoor gym for an outdoor event)? Leave those cameras out.</span>
       </div>
       <div class="camhead">
@@ -139,17 +143,17 @@
         </div>
       </div>
       <div class="chips" id="cams"></div>
-    </div>
+    </fieldset>
   </form>
 
-  <div id="status"></div>
+  <div id="status" role="status" aria-live="polite"></div>
   <section id="results"></section>
 </main>
 
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const S = { footage: null, sel: null, data: null, k: null, selected: null, clipEnd: null, playOn: false };
+const S = { footage: null, sel: null, data: null, k: null, selected: null, clipEnd: null, playOn: false, endPaused: false };
 
 // ---- time helpers: camera wall-clock strings, handled as UTC so the browser time zone never shifts them ----
 const ms = (iso) => Date.parse(iso.length === 16 ? iso + ":00Z" : iso.replace(/(\.\d+)?$/, "") + "Z");
@@ -188,40 +192,61 @@ async function init() {
   document.querySelectorAll("#quick [data-q]").forEach((b) => b.addEventListener("click", () => quick(b.dataset.q)));
   chipStyle();
   $("win").innerHTML = f.ui.window_minutes.map((m) => `<option value="${m}" ${m === f.ui.default_window_minutes ? "selected" : ""}>± ${m} min</option>`).join("");
-  $("when").min = f.start.slice(0, 16);
-  $("when").max = f.end.slice(0, 16);
+  // a witness time may lie just outside the footage: allow the largest window either side (the coverage line then
+  // says how much footage the window holds)
+  const pad = Math.max(...f.ui.window_minutes) * 60000;
+  $("when").min = iso(ms(f.start) - pad).slice(0, 16);
+  $("when").max = iso(ms(f.end) + pad).slice(0, 16);
   const days = [...new Set(f.cameras.flatMap((c) => c.spans.map((s) => s[0].slice(0, 10))))].sort();
   $("hint").textContent += ` Footage: ${days.map(dayLabel).join(", ")}.`;
   // a search can be shared as a link: ?q=...&when=2018-03-15T15:33&win=10&cams=G336,G474
-  const u = new URLSearchParams(location.search);
-  if (u.get("when")) $("when").value = u.get("when");
-  if (u.get("win")) $("win").value = u.get("win");
-  if (u.get("cams")) { const want = u.get("cams").split(","); setCams((c) => want.includes(c.camera)); }
+  const u = new URLSearchParams(location.search), notes = [];
+  if (u.get("when")) {
+    const w = u.get("when");
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(w) && !isNaN(ms(w))) $("when").value = w;
+    else notes.push(`the link's time "${w}" was not understood, so all times are searched`);
+  }
+  if (u.get("win")) {
+    if (f.ui.window_minutes.includes(+u.get("win"))) $("win").value = u.get("win");
+    else notes.push(`the link's window "± ${u.get("win")} min" is not an option, so ± ${f.ui.default_window_minutes} min is used`);
+  }
+  if (u.get("cams")) {
+    const want = u.get("cams").split(","), known = want.filter((c) => cam(c));
+    if (known.length) setCams((c) => known.includes(c.camera));
+    if (known.length < want.length) notes.push(`unknown cameras in the link were ignored: ${want.filter((c) => !cam(c)).join(", ")}`);
+  }
+  S.linkNotes = notes;
   if (u.get("q")) { $("q").value = u.get("q"); search(selection()); }
 }
 
 const cam = (id) => S.footage.cameras.find((c) => c.camera === id);
 function chipStyle() { document.querySelectorAll("#cams input").forEach((i) => i.closest(".chip").classList.toggle("off", !i.checked)); }
 function setCams(keep) { document.querySelectorAll("#cams input").forEach((i) => { i.checked = keep(cam(i.value)); }); chipStyle(); }
-function quick(q) {
-  if (q === "all") setCams(() => true);
-  if (q === "outdoor") setCams((c) => c.place === "outdoor");
-  if (q === "indoor") setCams((c) => c.place === "indoor");
-  if (q === "rgb") setCams((c) => c.modality !== "ir");
-  if ($("q").value.trim() && S.data) search(selection());     // re-run a search already on screen
+const PLACE = { all: () => true, outdoor: (c) => c.place === "outdoor", indoor: (c) => c.place === "indoor",
+                rgb: (c) => c.modality !== "ir" };
+function quick(q) {                                      // a form control: changes the ticks; Search runs it
+  setCams(PLACE[q]);
+  if (S.data) $("status").innerHTML = '<div class="panel note">Cameras changed: press Search to apply.</div>';
 }
-function leaveOut(id) {
-  const on = new Set(selection().cams);                 // current ticks, read before any is changed
-  setCams((c) => c.camera !== id && on.has(c.camera));
-  search(selection());
+// Actions on a result (leave out, widen, all times, deeper ...) change ONE thing of the search on screen (S.sel), not
+// whatever has since been typed in the form; the form is then set to match, so form and results agree.
+function reSearch(change) {
+  const sel = { ...S.sel, ...change };
+  sel.all = sel.cams.length === S.footage.cameras.length;
+  sel.t0 = sel.when ? ms(sel.when) - sel.win * 60000 : null;
+  sel.t1 = sel.when ? ms(sel.when) + sel.win * 60000 : null;
+  $("q").value = sel.q; $("when").value = sel.when; $("win").value = sel.win;
+  setCams((c) => sel.cams.includes(c.camera));
+  search(sel);
 }
+function leaveOut(id) { reSearch({ cams: S.sel.cams.filter((c) => c !== id) }); }
 
 function selection() {
   const cams = [...document.querySelectorAll("#cams input:checked")].map((i) => i.value);
   const all = cams.length === S.footage.cameras.length;
   const when = $("when").value, win = +$("win").value;
   const t0 = when ? ms(when) - win * 60000 : null, t1 = when ? ms(when) + win * 60000 : null;
-  return { q: $("q").value.trim(), cams, all, when, win, t0, t1 };
+  return { q: $("q").value.trim(), cams, all, when, win, t0, t1, depth: S.footage.ui.k_per_index };   // tested depth
 }
 
 function params(sel, extra = {}) {
@@ -234,20 +259,26 @@ function params(sel, extra = {}) {
 async function search(sel) {
   if (!sel.q) return;
   if (!sel.cams.length) { $("status").innerHTML = '<div class="panel error">Select at least one camera.</div>'; return; }
-  S.sel = sel;
-  const link = new URLSearchParams({ q: sel.q });
-  if (sel.when) { link.set("when", sel.when); link.set("win", sel.win); }
-  if (!sel.all) link.set("cams", sel.cams.join(","));
-  history.replaceState(null, "", "?" + link);
   $("go").disabled = true;
   $("status").innerHTML = '<div class="panel note">Searching…</div>';
+  $("results").classList.add("stale");
   try {
-    S.data = await api("/search?" + params(sel, { q: sel.q, k: S.k }));
-    $("status").innerHTML = "";
+    const data = await api("/search?" + params(sel, { q: sel.q, k: S.k, depth: sel.depth }));
+    S.sel = sel;
+    S.data = data;
+    const link = new URLSearchParams({ q: sel.q });      // the address names what is on screen, after success only
+    if (sel.when) { link.set("when", sel.when); link.set("win", sel.win); }
+    if (!sel.all) link.set("cams", sel.cams.join(","));
+    history.replaceState(null, "", "?" + link);
+    const notes = S.linkNotes || [];
+    S.linkNotes = [];
+    $("status").innerHTML = notes.length ? `<div class="panel note">Note: ${esc(notes.join("; "))}.</div>` : "";
     render();
   } catch (e) {
-    $("status").innerHTML = `<div class="panel error">Search failed: ${esc(e.message)}</div>`;
+    $("results").innerHTML = "";                         // never leave the previous search's results under an error
+    $("status").innerHTML = `<div class="panel error" role="alert">Search failed: ${esc(e.message)}</div>`;
   } finally {
+    $("results").classList.remove("stale");
     $("go").disabled = false;
   }
 }
@@ -260,7 +291,10 @@ function coverageHtml(cov, sel) {
   return `<div class="panel">
     <div class="coverage"><strong>${esc(cov.line)}</strong>
       <span class="muted">${esc(where)} · ${esc(when)} · matched with: ${esc(cov.branches.join(", "))}</span></div>
-    <div class="note">${esc(S.data.note)}</div></div>`;
+    <div class="note">${esc(S.data.note)} ${esc(S.data.sampling)}</div></div>
+    ${S.data.tested_config ? "" : `<div class="panel deep"><strong>Deeper search: ${S.data.depth} hits per index.</strong>
+      A user fallback outside the tested configuration (the test run used ${S.footage.ui.k_per_index}); it can find
+      more events but puts more clips to review before them.</div>`}`;
 }
 
 function render() {
@@ -272,10 +306,7 @@ function render() {
     bindFallback();
     return;
   }
-  h += `<div class="panel" id="player"><video id="video" controls preload="metadata"></video>
-          <div class="player-bar"><strong id="cap"></strong>
-            <button type="button" id="replay">Replay clip</button>
-            <button type="button" id="playon">Keep playing past the clip</button></div></div>`;
+  h += playerHtml();
   h += `<div class="panel"><h2 class="section" style="margin-top:0">Where the candidates are</h2>${timelineHtml(clips, sel)}</div>`;
   h += `<h2 class="section">${clips.length} candidate clips, best first</h2><div class="grid">${clips.map(cardHtml).join("")}</div>`;
   if (clips.length >= S.k && S.k < S.footage.ui.max_clips) h += `<p><button type="button" id="more">Show more candidates</button></p>`;
@@ -286,14 +317,30 @@ function render() {
     el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(+el.dataset.rank); } });
   });
   document.querySelectorAll("[data-leave]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); leaveOut(b.dataset.leave); }));
-  if ($("more")) $("more").onclick = () => { S.k = Math.min(S.footage.ui.max_clips, S.k + S.footage.ui.default_clips); search(S.sel); };
+  if ($("more")) $("more").onclick = () => { S.k = Math.min(S.footage.ui.max_clips, S.k + S.footage.ui.default_clips); reSearch({}); };
+  bindPlayer();
+  bindFallback();
+}
+
+function playerHtml() {
+  return `<div class="panel" id="player"><video id="video" controls preload="metadata"></video>
+    <div class="player-bar"><strong id="cap"></strong>
+      <button type="button" id="replay">Replay clip</button>
+      <button type="button" id="playon">Keep playing past the clip</button></div></div>`;
+}
+function bindPlayer() {
   $("replay").onclick = () => replay();
   $("playon").onclick = () => { S.playOn = true; $("video").play(); };
-  $("video").addEventListener("timeupdate", () => {
-    const v = $("video");
-    if (!S.playOn && S.clipEnd !== null && v.currentTime >= S.clipEnd) v.pause();
+  $("video").addEventListener("timeupdate", () => {     // pause ONCE when the clip ends; after that the native
+    const v = $("video");                               // controls (or "keep playing") play on
+    if (!S.playOn && !S.endPaused && S.clipEnd !== null && v.currentTime >= S.clipEnd) { v.pause(); S.endPaused = true; }
   });
-  bindFallback();
+}
+
+// clips of the same video whose shown spans (with context) overlap: flagged, not merged (display only; ui-2)
+function overlaps(c) {
+  return S.data.clips.filter((k) => k.rank !== c.rank && k.video_id === c.video_id && k.start_s < c.end_s && c.start_s < k.end_s)
+    .map((k) => k.rank);
 }
 
 function cardHtml(c) {
@@ -313,6 +360,7 @@ function cardHtml(c) {
       <div>${dayLabel(day(t0))} · ${hms(t0)}–${hms(t1)} <span class="muted">(${dur((t1 - t0) / 1000)})</span></div>
       <div class="bar" title="Similarity, scaled from the lowest to the highest candidate in this list (fused score ${c.score})"><div style="width:${(rel * 100).toFixed(0)}%"></div></div>
       <div class="muted">Matched by: ${esc(c.matched_by.join(", "))}${what ? " — " + esc(what) : ""}</div>
+      ${overlaps(c).length ? `<div class="muted">Overlaps #${overlaps(c).join(", #")} (same video, overlapping time)</div>` : ""}
       ${S.sel.cams.length > 1 ? `<button type="button" class="linkbtn" data-leave="${esc(c.camera)}">Leave out ${esc(c.camera)} and search again</button>` : ""}
     </div></div>`;
 }
@@ -369,6 +417,7 @@ function play(videoId, start, end, caption) {
   S.selected = { videoId, start, end };
   S.clipEnd = end;
   S.playOn = false;
+  S.endPaused = false;
   const src = `/proxy/${videoId}`;
   const go = () => { v.currentTime = start; v.play().catch(() => {}); };
   if (v.getAttribute("src") !== src) { v.setAttribute("src", src); v.addEventListener("loadedmetadata", go, { once: true }); v.load(); }
@@ -376,7 +425,7 @@ function play(videoId, start, end, caption) {
   p.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function replay() { if (S.selected) { S.playOn = false; $("video").currentTime = S.selected.start; $("video").play(); } }
+function replay() { if (S.selected) { S.playOn = false; S.endPaused = false; $("video").currentTime = S.selected.start; $("video").play(); } }
 
 // ---- fallback: never a bare "no results"; always a next step ----
 function fallbackHtml(empty) {
@@ -384,7 +433,7 @@ function fallbackHtml(empty) {
   const zero = S.data.coverage.hours === 0;
   let h = `<div class="panel fallback" id="fallback">
     <h2>${empty ? "No candidate clips in this selection" : "Not in the list?"}</h2>
-    <div>${zero ? "There is no indexed footage for these cameras and times. " : ""}Rewind ranks clips by similarity to the description. It can miss events, especially small or distant ones, thermal (IR) views and very brief actions. <strong>A missing or wrong result never means the event did not happen.</strong></div>
+    <div>${zero ? "There is no indexed footage for these cameras and times. " : ""}Rewind ranks clips by similarity to the description and can miss events. In testing, misses were most often small or distant objects, thermal (IR) views and very brief actions (causes judged by eye). <strong>A missing or wrong result never means the event did not happen.</strong></div>
     <div class="actions">`;
   if (sel.t0 !== null && next) h += `<button type="button" data-act="widen">Widen to ± ${next} min</button>`;
   if (sel.t0 !== null) h += `<button type="button" data-act="notime">Search all times</button>`;
@@ -392,6 +441,7 @@ function fallbackHtml(empty) {
   if (!sel.all) h += `<button type="button" data-act="allcams">Search all cameras</button>`;
   const places = new Set(sel.cams.map((c) => cam(c).place));
   if (places.has("indoor") && places.has("outdoor")) h += `<button type="button" data-act="outdoor">Outdoor cameras only</button>`;
+  if (!zero && sel.depth !== S.footage.ui.deep_k) h += `<button type="button" data-act="deep" title="A user fallback outside the tested configuration">Search deeper (${S.footage.ui.deep_k} per index; untested setting)</button>`;
   if (!zero) h += `<button type="button" data-act="motion">Review by motion in this selection</button>`;
   h += `</div><div id="motion"></div></div>`;
   return h;
@@ -400,11 +450,13 @@ function fallbackHtml(empty) {
 function bindFallback() {
   document.querySelectorAll("#fallback [data-act]").forEach((b) => b.addEventListener("click", () => {
     const act = b.dataset.act;
-    if (act === "widen") { const opts = S.footage.ui.window_minutes; $("win").value = opts.find((m) => m > S.sel.win); search(selection()); }
-    if (act === "notime") { $("when").value = ""; search(selection()); }
+    const all = S.footage.cameras;
+    if (act === "widen") reSearch({ win: S.footage.ui.window_minutes.find((m) => m > S.sel.win) });
+    if (act === "notime") reSearch({ when: "" });
     if (act === "addtime") { $("when").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); }
-    if (act === "allcams") { setCams(() => true); search(selection()); }
-    if (act === "outdoor") { setCams((c) => c.place === "outdoor"); search(selection()); }
+    if (act === "allcams") reSearch({ cams: all.map((c) => c.camera) });
+    if (act === "outdoor") reSearch({ cams: S.sel.cams.filter((c) => cam(c).place === "outdoor") });
+    if (act === "deep") reSearch({ depth: S.footage.ui.deep_k });
     if (act === "motion") motionList();
   }));
 }
@@ -415,7 +467,7 @@ async function motionList() {
     const m = await api("/motion?" + params(S.sel));
     const top = Math.max(...m.segments.map((s) => s.activity), 1e-9);
     S.motion = m.segments;
-    $("motion").innerHTML = `<div class="note" style="margin-top:10px">${esc(m.note)} Showing ${m.segments.length} of ${m.of} one-minute segments.</div>
+    $("motion").innerHTML = `<div class="note" style="margin-top:10px">${esc(m.note)} Showing ${m.segments.length} of ${m.of} segments of ${m.segment_s} s.</div>
       <table class="motion"><thead><tr><th>#</th><th>Camera</th><th>When</th><th>Movement</th></tr></thead><tbody>
       ${m.segments.map((s, i) => `<tr class="play" tabindex="0" data-i="${i}"><td>${i + 1}</td>
         <td>${esc(s.camera)} ${s.modality === "ir" ? '<span class="badge ir">IR</span>' : ""}</td>
@@ -426,10 +478,8 @@ async function motionList() {
       const go = () => {
         const s = S.motion[+tr.dataset.i];
         if (!$("player")) {               // no player yet (empty result): add one above the fallback
-          $("fallback").insertAdjacentHTML("beforebegin", `<div class="panel" id="player"><video id="video" controls preload="metadata"></video>
-            <div class="player-bar"><strong id="cap"></strong><button type="button" id="replay">Replay</button></div></div>`);
-          $("replay").onclick = () => replay();
-          $("video").addEventListener("timeupdate", () => { if (!S.playOn && S.clipEnd !== null && $("video").currentTime >= S.clipEnd) $("video").pause(); });
+          $("fallback").insertAdjacentHTML("beforebegin", playerHtml());
+          bindPlayer();
         }
         play(s.video_id, s.start_s, s.end_s, `Motion segment · ${s.camera} · ${hms(ms(s.wall_start))}–${hms(ms(s.wall_end))}`);
       };

@@ -86,6 +86,7 @@ def motion_toy() -> "Rewind":
     rw.motion = {seg("G1", 10, 0): 0.1, seg("G1", 10, 6): 0.9, seg("G2", 10, 2): 0.5, seg("G1", 10, 3): 0.5}
     rw.seg_video = {seg("G1", 10, 0): 1, seg("G1", 10, 3): 1, seg("G1", 10, 6): 2, seg("G2", 10, 2): 3}
     rw.proxies = {1: "a.mp4", 2: "b.mp4", 3: "c.mp4"}
+    rw.segment_s = 60
     return rw
 
 
@@ -131,7 +132,12 @@ def test_endpoints_with_toy_rewind(tmp_path, monkeypatch):
     rw = motion_toy()
     rw.default_clips, rw.max_clips = 20, 100
     rw.ui = {"window_minutes": [5, 10], "default_window_minutes": 10, "fallback_motion_k": 2, "thumb_width": 320,
+             "deep_k": 800,
              "cameras": {"G1": {"place": "indoor", "note": "gym"}, "G2": {"place": "outdoor", "note": "road"}}}
+    from rewind.search.core import SearchConfig
+    rw.scfg, rw.depths, rw.sampling = SearchConfig(200, 5, 60, 5), (200, 800), "sampled"
+    rw.last_t = {1: (9000 - 1) / 30.0, 2: (9000 - 1) / 30.0, 3: (3000 - 1) / 10.0}   # last frame of each video
+    rw.frame_w, rw.frame_h = {1: 1920, 2: 1920, 3: 352}, {1: 1080, 2: 1080, 3: 240}
     rw.join_s = 1.0
     rw.modality = {"G1": "rgb", "G2": "ir"}
     clip = tmp_path / "a.mp4"
@@ -142,7 +148,8 @@ def test_endpoints_with_toy_rewind(tmp_path, monkeypatch):
     assert [x["camera"] for x in f["cameras"]] == ["G1", "G2"] and f["cameras"][1]["modality"] == "ir"
     assert f["cameras"][0]["place"] == "indoor" and f["cameras"][1]["note"] == "road"
     assert f["cameras"][0]["hours"] == round(600 / 3600, 2) and f["branches"] == ["appearance"]
-    assert f["ui"] == {"window_minutes": [5, 10], "default_window_minutes": 10, "default_clips": 20, "max_clips": 100}
+    assert f["ui"] == {"window_minutes": [5, 10], "default_window_minutes": 10, "deep_k": 800, "default_clips": 20,
+                       "max_clips": 100, "k_per_index": 200}
     m = c.get("/motion").json()
     assert len(m["segments"]) == 2 and m["coverage"]["line"].startswith("Searched")      # default k from config
     assert c.get("/motion?k=101").status_code == 400
@@ -150,4 +157,25 @@ def test_endpoints_with_toy_rewind(tmp_path, monkeypatch):
     assert r.status_code == 206 and r.content == bytes(range(10, 20))                     # seeking works
     assert c.get("/proxy/99").status_code == 404
     assert c.get("/thumb?video_id=1&t=999").status_code == 400                            # outside the clip
+    assert c.get("/thumb?video_id=1&t=300").status_code == 400     # = clip duration, after the last frame (299.97 s)
     assert c.get("/thumb?video_id=1&t=1&box=1,2,3").status_code == 400
+    assert c.get("/thumb?video_id=1&t=1&box=nan,0,10,10").status_code == 400            # non-finite: 400, not 500
+    assert c.get("/thumb?video_id=1&t=1&box=inf,0,10,10").status_code == 400
+    assert m["segment_s"] == 60
+
+
+def test_selection_dedupes_cameras_and_refuses_empty_list():
+    rw = toy()
+    assert rw.selection("G2,G1,G2", None, None)[0] == ["G2", "G1"]     # each index searched once (ui-4)
+    with pytest.raises(HTTPException, match="empty list"):
+        rw.selection(",", None, None)
+    with pytest.raises(HTTPException, match="empty list"):
+        rw.selection("", None, None)
+
+
+def test_search_refuses_an_untested_depth_before_any_work():
+    from rewind.search.core import SearchConfig
+    rw = toy()
+    rw.scfg, rw.depths = SearchConfig(200, 5, 60, 5), (200, 800)      # no encoders: the check must come first
+    with pytest.raises(HTTPException, match="depth must be one of"):
+        rw.search("a car", ["G1"], None, None, 5, depth=500)
