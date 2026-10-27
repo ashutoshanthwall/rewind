@@ -1,0 +1,120 @@
+query_id,kind,qtype,specificity,modality,camera_id,instances,AP@10,AP@50,IR@10,IR@50,variant,R@1,R@5,R@10,seconds,hit,hit_rank,n_clips
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.49809523809523804,0.17742101588949016,0.15,0.3,w0 raw,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.1375,0.08730731931725144,0.07142857142857142,0.2619047619047619,w0 raw,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.15416666666666665,0.11228724750762513,0.047619047619047616,0.22510822510822512,w0 raw,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.11666666666666665,0.12828507171448936,0.1111111111111111,0.37777777777777777,w0 raw,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.06190476190476191,0.044455028271992554,0.041666666666666664,0.2916666666666667,w0 raw,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w0 raw,0.0,1.0,1.0,14.0,True,2.0,61.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w0 raw,0.0,0.0,0.0,818.266667,True,63.0,85.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w0 raw,0.0,0.0,1.0,159.566667,True,9.0,73.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w0 raw,0.0,0.0,0.0,431.233333,True,27.0,65.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w0 raw,0.0,0.0,0.0,13674.70000033333,False,-1.0,89.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w0 raw,0.0,0.0,0.0,370.7,True,25.0,73.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w0 raw,0.0,0.0,0.0,254.666666,True,14.0,53.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w0 raw,0.0,1.0,1.0,37.466667,True,2.0,62.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w0 raw,0.0,0.0,0.0,13380.43333333333,False,-1.0,57.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w0 raw,0.0,0.0,0.0,13884.43333333333,False,-1.0,112.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w0 raw,0.0,0.0,0.0,967.266667,True,81.0,94.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w0 raw,0.0,1.0,1.0,21.8,True,2.0,59.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.6083333333333333,0.2520421918767507,0.175,0.375,w2 raw,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.6,0.23126534770870322,0.21428571428571427,0.42857142857142855,w2 raw,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.01111111111111111,0.01597697218422253,0.008658008658008658,0.06493506493506493,w2 raw,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.1773015873015873,0.13836066088224325,0.15555555555555556,0.4666666666666667,w2 raw,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.08357142857142856,0.05867430400406028,0.0625,0.3541666666666667,w2 raw,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w2 raw,0.0,0.0,1.0,298.33333300000004,True,10.0,76.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w2 raw,0.0,0.0,1.0,257.433333,True,10.0,121.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w2 raw,0.0,0.0,0.0,312.8,True,18.0,152.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w2 raw,0.0,0.0,0.0,455.233333,True,16.0,81.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w2 raw,0.0,0.0,0.0,1430.266667,True,100.0,109.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w2 raw,0.0,0.0,1.0,231.7,True,6.0,66.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w2 raw,0.0,0.0,0.0,546.6666660000001,True,21.0,75.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w2 raw,0.0,1.0,1.0,98.466667,True,5.0,110.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w2 raw,0.0,0.0,0.0,13992.43333333333,False,-1.0,85.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w2 raw,0.0,0.0,1.0,91.333333,True,6.0,152.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w2 raw,0.0,0.0,0.0,1293.2666669999999,True,86.0,109.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w2 raw,0.0,1.0,1.0,114.8,True,4.0,113.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.5583333333333333,0.2010146009363265,0.15,0.4,w2 camera_type,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.4597619047619048,0.20612125099907055,0.21428571428571427,0.42857142857142855,w2 camera_type,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.0,0.00375,0.0,0.025974025974025976,w2 camera_type,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.09523809523809523,0.0811446024996233,0.13333333333333333,0.4222222222222222,w2 camera_type,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.08555555555555557,0.06321185139393344,0.08333333333333333,0.25,w2 camera_type,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w2 camera_type,0.0,0.0,0.0,372.33333300000004,True,11.0,98.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w2 camera_type,0.0,0.0,0.0,264.433333,True,12.0,126.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w2 camera_type,0.0,0.0,0.0,260.8,True,16.0,173.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w2 camera_type,0.0,0.0,0.0,416.233333,True,17.0,120.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w2 camera_type,0.0,0.0,0.0,1545.533334,True,114.0,121.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w2 camera_type,0.0,0.0,1.0,249.7,True,8.0,108.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w2 camera_type,0.0,0.0,0.0,975.6666660000001,True,56.0,112.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w2 camera_type,0.0,0.0,1.0,190.466667,True,7.0,125.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w2 camera_type,0.0,0.0,0.0,14269.70000033333,False,-1.0,116.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w2 camera_type,0.0,0.0,1.0,106.333333,True,7.0,156.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w2 camera_type,0.0,0.0,0.0,14236.70000033333,False,-1.0,113.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w2 camera_type,0.0,0.0,0.0,384.066667,True,23.0,118.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.05555555555555556,0.07910316330529096,0.05,0.35,w0 camera_type,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.2861111111111111,0.15307920144229664,0.11904761904761904,0.35714285714285715,w0 camera_type,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.02,0.03599759720185251,0.004329004329004329,0.10822510822510822,w0 camera_type,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.0125,0.0759724959037879,0.044444444444444446,0.4,w0 camera_type,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.23285714285714287,0.07273753704380302,0.10416666666666667,0.1875,w0 camera_type,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w0 camera_type,1.0,1.0,1.0,0.0,True,1.0,84.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w0 camera_type,0.0,0.0,0.0,13762.70000033333,False,-1.0,100.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w0 camera_type,0.0,0.0,1.0,107.566667,True,7.0,96.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w0 camera_type,0.0,0.0,0.0,856.233333,True,68.0,93.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w0 camera_type,0.0,0.0,0.0,13788.96666733333,False,-1.0,103.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w0 camera_type,0.0,0.0,0.0,13718.43333333333,False,-1.0,93.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w0 camera_type,0.0,0.0,0.0,689.6666660000001,True,53.0,91.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w0 camera_type,0.0,0.0,1.0,116.466667,True,8.0,79.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w0 camera_type,0.0,0.0,0.0,13647.70000033333,False,-1.0,87.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w0 camera_type,0.0,0.0,0.0,1282.6000000000001,True,112.0,117.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w0 camera_type,0.0,0.0,0.0,13792.70000033333,False,-1.0,102.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w0 camera_type,0.0,0.0,0.0,266.8,True,22.0,104.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.0,0.01249488505079451,0.0,0.125,w0 raw crops none,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.0,0.0007002801120448179,0.0,0.023809523809523808,w0 raw crops none,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.14694444444444443,0.16096928528301072,0.0735930735930736,0.24675324675324675,w0 raw crops none,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.0,0.008306529449386592,0.0,0.1111111111111111,w0 raw crops none,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.0,0.031722496030660026,0.0,0.25,w0 raw crops none,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,0.0,13436.633333333331,False,-1.0,62.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w0 raw crops none,0.0,0.0,0.0,13701.23333433333,False,-1.0,93.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,0.0,13594.23333433333,False,-1.0,82.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,1.0,148.533333,True,7.0,54.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w0 raw crops none,0.0,0.0,0.0,317.866667,True,26.0,95.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,0.0,652.0,True,39.0,39.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,0.0,438.633333,True,23.0,38.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w0 raw crops none,0.0,0.0,0.0,13623.96666733333,False,-1.0,88.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w0 raw crops none,0.0,0.0,0.0,13873.96666733333,False,-1.0,111.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w0 raw crops none,0.0,0.0,0.0,582.6,True,48.0,109.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w0 raw crops none,0.0,0.0,0.0,13699.23333433333,False,-1.0,91.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w0 raw crops none,0.0,0.0,0.0,13648.23333433333,False,-1.0,84.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.09,0.07685864019520852,0.075,0.275,w0 raw crops detection_then_motion,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.08273809523809524,0.08417203793143643,0.07142857142857142,0.2619047619047619,w0 raw crops detection_then_motion,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.22749999999999998,0.19586868348227612,0.06926406926406926,0.21212121212121213,w0 raw crops detection_then_motion,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.0,0.00847183317771553,0.0,0.06666666666666667,w0 raw crops detection_then_motion,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.11499999999999999,0.05671752465113597,0.0625,0.22916666666666666,w0 raw crops detection_then_motion,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w0 raw crops detection_then_motion,0.0,1.0,1.0,79.0,True,4.0,59.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13559.70000033333,False,-1.0,74.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w0 raw crops detection_then_motion,0.0,0.0,1.0,106.566667,True,7.0,57.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,503.83333300000004,True,38.0,79.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13777.43333333333,False,-1.0,99.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w0 raw crops detection_then_motion,0.0,1.0,1.0,53.0,True,2.0,57.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13519.43333333333,False,-1.0,70.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w0 raw crops detection_then_motion,1.0,1.0,1.0,28.466667,True,1.0,57.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13691.43333333333,False,-1.0,90.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13908.43333333333,False,-1.0,115.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w0 raw crops detection_then_motion,0.0,0.0,0.0,13825.633333333331,False,-1.0,105.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w0 raw crops detection_then_motion,0.0,1.0,1.0,43.8,True,4.0,87.0
+dev-c01,category,vehicle_event,vague,rgb,,40.0,0.49809523809523804,0.17742101588949016,0.15,0.3,w0 raw exact,,,,,,,
+dev-c02,category,vehicle_event,moderate,rgb,,42.0,0.1375,0.08730731931725144,0.07142857142857142,0.2619047619047619,w0 raw exact,,,,,,,
+dev-c03,category,action,detailed,rgb,,231.0,0.15416666666666665,0.11228724750762513,0.047619047619047616,0.22510822510822512,w0 raw exact,,,,,,,
+dev-c04,category,action,detailed,rgb,,45.0,0.11666666666666665,0.12828507171448936,0.1111111111111111,0.37777777777777777,w0 raw exact,,,,,,,
+dev-c05,category,action,detailed,rgb,,48.0,0.06190476190476191,0.044455028271992554,0.041666666666666664,0.2916666666666667,w0 raw exact,,,,,,,
+dev-s01,specific,appearance,moderate,rgb,G330,,,,,,w0 raw exact,0.0,1.0,1.0,14.0,True,2.0,61.0
+dev-s02,specific,appearance,moderate,rgb,G336,,,,,,w0 raw exact,0.0,0.0,0.0,818.266667,True,63.0,85.0
+dev-s03,specific,appearance,moderate,rgb,G330,,,,,,w0 raw exact,0.0,0.0,1.0,159.566667,True,9.0,73.0
+dev-s04,specific,appearance,detailed,rgb,G330,,,,,,w0 raw exact,0.0,0.0,0.0,431.233333,True,27.0,66.0
+dev-s05,specific,action,vague,ir,G474,,,,,,w0 raw exact,0.0,0.0,0.0,13674.70000033333,False,-1.0,89.0
+dev-s06,specific,action,vague,rgb,G330,,,,,,w0 raw exact,0.0,0.0,0.0,357.7,True,25.0,76.0
+dev-s07,specific,action,detailed,rgb,G330,,,,,,w0 raw exact,0.0,0.0,0.0,254.666666,True,14.0,54.0
+dev-s08,specific,action,vague,rgb,G330,,,,,,w0 raw exact,0.0,1.0,1.0,37.466667,True,2.0,64.0
+dev-s09,specific,vehicle_event,moderate,ir,G474,,,,,,w0 raw exact,0.0,0.0,0.0,13380.43333333333,False,-1.0,57.0
+dev-s10,specific,vehicle_event,vague,rgb,G336,,,,,,w0 raw exact,0.0,0.0,0.0,13884.43333333333,False,-1.0,112.0
+dev-s11,specific,vehicle_event,vague,rgb,G424,,,,,,w0 raw exact,0.0,0.0,0.0,967.266667,True,81.0,94.0
+dev-s12,specific,vehicle_event,moderate,rgb,G436,,,,,,w0 raw exact,0.0,1.0,1.0,21.8,True,2.0,59.0
