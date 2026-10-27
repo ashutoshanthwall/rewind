@@ -8,8 +8,14 @@ Writes, in one go:
 Refuses to run again unless --rebuild is given, and refuses --rebuild once queries are frozen (Gate 2.2): the
 queries are written against these splits. Reads only label metadata, never video or search results. A short run.
 
+--from-committed (fresh clone, pre-Phase-10 review repro-2): fill the three DB tables from the committed
+eval/splits/*.csv instead of choosing a split. The blocks are recomputed with the same code and must equal the
+committed ones (block ids, clips, hours); the assignment is read from blocks.csv; boundary flags are recomputed with
+the same rule. Writes no CSV and no report; refuses if the tables already hold a split.
+
 Run from the repo root:
-  uv run python -m scripts.make_splits
+  uv run python -m scripts.make_splits                    # step 2.1 (once)
+  uv run python -m scripts.make_splits --from-committed   # fresh clone: restore the frozen split
 """
 
 import argparse
@@ -114,7 +120,13 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "configs" / "config.yaml")
     parser.add_argument("--report", type=Path, default=REPO_ROOT / "results" / "reports" / "splits_2.1.md")
     parser.add_argument("--rebuild", action="store_true", help="replace an existing split (before Gate 2.2 only)")
+    parser.add_argument("--from-committed", action="store_true",
+                        help="fill the DB tables from the committed eval/splits/*.csv (fresh clone)")
     args = parser.parse_args()
+    if args.from_committed:
+        if args.rebuild:
+            raise SystemExit("--from-committed and --rebuild exclude each other")
+        return restore(args)
 
     config = yaml.safe_load(args.config.read_text())
     cfg, max_gap_s = config["splits"], config["ingest"]["max_name_duration_diff_s"]
@@ -175,6 +187,62 @@ def main() -> None:
     args.report.write_text(text)
     print(text)
     print(f"\nwrote {', '.join(str(p.relative_to(REPO_ROOT)) for p in committed + [args.report])} and 3 DB tables")
+
+
+def restore(args) -> None:
+    """--from-committed: the committed split into the DB tables, after checking the recomputed blocks match it."""
+    config = yaml.safe_load(args.config.read_text())
+    cfg, max_gap_s = config["splits"], config["ingest"]["max_name_duration_diff_s"]
+    with open(SPLITS_DIR / "blocks.csv", newline="") as f:
+        cblocks = {r["block_id"]: r for r in csv.DictReader(f)}
+    with open(SPLITS_DIR / "clips.csv", newline="") as f:
+        cclips = {r["clip"]: r for r in csv.DictReader(f)}
+    conn = connect(args.db)
+    conn.executescript(SCHEMA)
+    if conn.execute("SELECT COUNT(*) FROM blocks").fetchone()[0]:
+        raise SystemExit("The DB already holds a split (blocks table not empty); nothing restored")
+    videos = load_videos(conn)
+    labels = {r["video_id"]: r["label_source"] for r in conn.execute("SELECT video_id, label_source FROM clip_labels")}
+    events = conn.execute("SELECT event_id, video_id, group_id, activity_type, label_source, start_time, end_time "
+                          "FROM events").fetchall()
+    blocks = cut_blocks(find_sessions(videos, max_gap_s), cfg["block_target_min"] * 60)
+    stats = block_stats(blocks, videos, labels, events)
+    clip_of = {v.video_id: v.clip for v in videos}
+    problems = []
+    if {b.block_id for b in blocks} != set(cblocks):
+        problems.append(f"block ids differ: {sorted({b.block_id for b in blocks} ^ set(cblocks))[:5]}")
+    if set(clip_of.values()) != set(cclips):
+        problems.append(f"clips differ: {sorted(set(clip_of.values()) ^ set(cclips))[:5]}")
+    for b in blocks:
+        c = cblocks.get(b.block_id)
+        if c is None:
+            continue
+        if (int(c["n_videos"]) != len(b.video_ids) or c["start_time"] != b.start_time.isoformat()
+                or c["end_time"] != b.end_time.isoformat() or c["hours"] != f"{stats[b.block_id].hours:.4f}"):
+            problems.append(f"block {b.block_id} differs from blocks.csv")
+        for vid in b.video_ids:
+            if cclips.get(clip_of[vid], {}).get("block_id") != b.block_id:
+                problems.append(f"{clip_of[vid]} is not in block {b.block_id} in clips.csv")
+    if problems:
+        raise SystemExit("Recomputed blocks do not match the committed split; nothing restored:\n  " + "\n  ".join(problems[:10]))
+    assignment = {bid: r["split"] for bid, r in cblocks.items()}
+    if set(assignment.values()) - set(SPLITS):
+        raise SystemExit(f"unknown split names in blocks.csv: {set(assignment.values()) - set(SPLITS)}")
+    block_of = {vid: b.block_id for b in blocks for vid in b.video_ids}
+    spans = [EventSpan(e["event_id"], e["group_id"], block_of[e["video_id"]],
+                       datetime.fromisoformat(e["start_time"]), datetime.fromisoformat(e["end_time"])) for e in events]
+    boundary = boundary_events(spans, blocks, assignment, cfg["boundary_pad_s"])
+    with conn:
+        for b in blocks:
+            conn.execute("INSERT INTO blocks VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (b.block_id, b.session, b.start_time.isoformat(), b.end_time.isoformat(),
+                          assignment[b.block_id], len(b.video_ids), stats[b.block_id].hours))
+            conn.executemany("INSERT INTO video_blocks VALUES (?, ?)", [(vid, b.block_id) for vid in b.video_ids])
+        conn.executemany("INSERT INTO event_splits VALUES (?, ?, ?)",
+                         [(s.event_id, assignment[s.block_id], boundary.get(s.event_id)) for s in spans])
+    n = Counter(assignment.values())
+    print(f"restored the committed split: {len(blocks)} blocks ({dict(n)}), {len(block_of)} clips, {len(spans)} "
+          f"events ({len(boundary)} boundary-flagged)")
 
 
 def write_csvs(paths: list[Path], blocks, assignment: dict[str, str], stats, videos) -> None:

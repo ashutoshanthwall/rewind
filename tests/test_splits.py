@@ -514,3 +514,28 @@ def test_script_end_to_end_on_toy_database(monkeypatch, tmp_path):
     worksheet.unlink()
     run_script(monkeypatch, tmp_path, "--rebuild")                     # same seed and data -> same split
     assert clips_csv.read_bytes() == first_csv
+
+
+def test_restore_from_committed_reproduces_the_split(tmp_path):
+    # pre-Phase-10 review, repro-2: a fresh clone fills the split tables from eval/splits/*.csv (make_splits
+    # --from-committed); on a copy of the real DB with those tables emptied it must give back the same rows
+    import shutil
+    import subprocess
+    import sys
+    db = REPO_ROOT / "data" / "rewind.sqlite"
+    if not db.exists():
+        pytest.skip("data/rewind.sqlite not present (fresh clone)")
+    copy = tmp_path / "db.sqlite"
+    shutil.copy(db, copy)
+    with sqlite3.connect(copy) as c:
+        for t in ("event_splits", "video_blocks", "blocks"):
+            c.execute(f"DELETE FROM {t}")
+    run = lambda: subprocess.run([sys.executable, "-m", "scripts.make_splits", "--from-committed", "--db", str(copy)],
+                                 cwd=REPO_ROOT, capture_output=True, text=True)
+    r = run()
+    assert r.returncode == 0, r.stderr
+    a, b = sqlite3.connect(f"file:{db}?mode=ro", uri=True), sqlite3.connect(copy)
+    for t, k in (("blocks", "block_id"), ("video_blocks", "video_id"), ("event_splits", "event_id")):
+        assert a.execute(f"SELECT * FROM {t} ORDER BY {k}").fetchall() == b.execute(f"SELECT * FROM {t} ORDER BY {k}").fetchall(), t
+    r = run()                                               # a second run refuses: the tables hold a split
+    assert r.returncode != 0 and "already holds a split" in r.stderr + r.stdout

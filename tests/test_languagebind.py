@@ -64,3 +64,14 @@ def test_windows_are_embedded_independently():
     assert np.linalg.norm(zab, axis=1) == pytest.approx([1, 1], abs=2e-3)
     with pytest.raises(ValueError, match="expected"):
         lb.encode_windows(torch.randn(1, T + 1, 3, 28, 28))
+
+
+def test_missing_files_fail_loudly(tmp_path):
+    # pre-Phase-10 review, repro-1: transformers would load an empty dir silently with default config / tokenizer
+    from rewind.embed.languagebind import LanguageBind, REQUIRED_FILES
+    with pytest.raises(FileNotFoundError, match="fetch_languagebind"):
+        LanguageBind(tmp_path)
+    for f in REQUIRED_FILES[:-1]:
+        (tmp_path / f).write_text("{}")
+    with pytest.raises(FileNotFoundError, match="special_tokens_map.json"):   # one file still missing
+        LanguageBind(tmp_path)

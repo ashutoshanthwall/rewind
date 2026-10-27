@@ -26,11 +26,19 @@ from rewind.embed.languagebind_vendor.modeling_video import LanguageBindVideo
 MEAN = (0.48145466, 0.4578275, 0.40821073)
 STD = (0.26862954, 0.26130258, 0.27577711)
 TEXT_POSITION_IDS = "text_model.embeddings.position_ids"
+# Files the loader reads (scripts/fetch_languagebind.sh fetches and checks all of them). transformers loads a missing
+# config or tokenizer silently with defaults (pre-Phase-10 review, repro-1), so presence and basic shape are checked.
+REQUIRED_FILES = ("config.json", "pytorch_model.bin", "tokenizer.json", "vocab.json", "merges.txt",
+                  "tokenizer_config.json", "special_tokens_map.json")
+CLIP_VOCAB = 49408                # CLIP BPE vocabulary (OpenAI CLIP / LanguageBind text tower)
 
 
 class LanguageBind:
     def __init__(self, weights_dir: Path, device: str = "cuda", dtype: torch.dtype = torch.float16):
         weights_dir = Path(weights_dir)
+        missing_files = [f for f in REQUIRED_FILES if not (weights_dir / f).is_file()]
+        if missing_files:
+            raise FileNotFoundError(f"{weights_dir}: missing {missing_files}; run bash scripts/fetch_languagebind.sh")
         config = LanguageBindVideoConfig.from_pretrained(weights_dir)
         model = LanguageBindVideo(config)
         state = torch.load(weights_dir / "pytorch_model.bin", map_location="cpu", weights_only=True)
@@ -44,6 +52,8 @@ class LanguageBind:
             raise RuntimeError(f"{TEXT_POSITION_IDS} is not 0..{pos.shape[-1] - 1}")
         self.model = model.to(device=device, dtype=dtype).eval()
         self.tokenizer = CLIPTokenizer.from_pretrained(weights_dir)
+        if len(self.tokenizer) != CLIP_VOCAB:
+            raise RuntimeError(f"tokenizer in {weights_dir} has {len(self.tokenizer)} tokens, expected {CLIP_VOCAB}")
         self.num_frames = config.vision_config.num_frames
         self.size = config.vision_config.image_size
         self.dim = config.projection_dim
