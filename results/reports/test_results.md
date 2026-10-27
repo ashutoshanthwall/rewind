@@ -158,3 +158,34 @@ mechanically: the multiset of numbers in this file before and after differs only
 4. **`IR@k` → `instance_recall@k` in `results/reports/test_rows.csv`** (column names only). Reason: "IR" means
    infrared elsewhere. `results/experiments.csv` keeps the key `IR@k` (append-only log, also used by the step 2.3 /
    3.2 baseline rows): there, `IR@k` = category instance recall.
+
+### Corrections and caveats added after the pre-Phase-10 review (27 Oct 2026; wording only, no number changed)
+
+Source: `results/reports/review_pre10.md` (independent reviewers; findings named in brackets). No metric, row or
+query was recomputed or changed; the tables above are as written by the single run.
+5. **Who wrote the queries [leakage-3].** The frozen test queries were drafted by Claude Code agents from the
+   annotation labels and keyframe sheets in witness style (a seeded plan fixed which events, query types and
+   specificity), then reviewed and approved by Ashutosh and frozen (SHA-256 in `eval/queries/HASHES`) before any
+   search code existed. This deviates from the plan (CLAUDE.md 1.10 / step 2.2: the author writes them). No decision
+   read the test queries; all gates used tuning/dev.
+6. **Cross-system comparisons on unit-count metrics are not valid [metrics-time-1].** Category mAP@k, category
+   instance recall@k and Recall@1/5/10 count ranked units, and the units differ: the baselines rank 60 s segments,
+   Rewind's clips are ~10–12 s (median of the saved top-10 clips: 10 s category, 12 s specific). A 60 s unit overlaps an
+   event by chance far more often (on dev, chance AP@50 is about 6× higher for 60 s units than for 12 s ones). These
+   columns compare variants of one system fairly but not Rewind with the baselines; the earlier reading "category: no
+   better than sequential or motion" (PROGRESS.md 8.2) is **withdrawn**. Seconds watched is the unit-free comparison.
+7. **The mean is asymmetric [metrics-time-2].** A Rewind miss is charged its whole clip list plus a full review of the
+   16.67 h of test footage (the frozen miss rule), while the baselines rank all footage and never miss; the sequential
+   baseline's expected cost is about half the footage. Read the "mean s" column (Rewind 28,277 vs sequential 30,282,
+   witness 2,927, motion 20,676) with this in mind; the median and the hit count (13 / 24) are reported separately.
+8. **Hits via neighbouring frames [metrics-time-3].** For 6 of Rewind's 13 hits (tes-s03, s07, s15, s21, s23, s24)
+   no retrieved appearance vector lies inside the event (best in-event rank 647–8,682, beyond the 200 per index): the
+   clip counts as a hit through frames just outside the event plus the ±5 s context, as the frozen hit rule allows
+   (overlap of the shown clip with the event). "Found" therefore does not always mean that a matched frame showed the
+   event.
+9. **Secondary vs primary, read correctly [claims-1].** In the "Secondary vs primary" row, 8 of the 20 queries where
+   the secondary is "slower" are missed by both systems (tes-s04, s05, s10, s12, s13, s16, s17, s19): their difference
+   is only the secondary's longer clip list in the miss cost. Of the 13 events both systems find, 12 rank lower under
+   the secondary and one (tes-s11) ranks higher; the secondary finds 3 more (tes-s01, s08, s20). The gate rule
+   (`rewind/eval/gate.py`) counts misses by both as ties; under that reading the secondary's slower median is not
+   clearly different from zero. The row stays as written; it decides nothing.

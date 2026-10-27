@@ -98,7 +98,7 @@ This project is complete when **all** of these are true:
 **MEVA — Multiview Extended Video with Activities** (Corona et al., WACV 2021, arXiv 2012.00914).
 - Long untrimmed continuous video, scripted + spontaneous background activity, many cameras with overlapping and non-overlapping views, **RGB and thermal IR**.
 - Public release: ~328 h ground-camera video; annotations for 37 activity types (temporal extents + actor/prop boxes). The activity list is expected to include vehicle events such as starts/stops/turns and person entering/exiting through structures — **VERIFY exact names in the annotations**.
-- License: CC-BY-4.0 (VERIFY against the MEVA site; cite the dataset in the README).
+- License: CC BY 4.0 (verified 27 Oct: data/annotations/meva-data-repo/LICENSE and mevadata.org; cited in the README).
 - Video: public AWS bucket, no account needed: `aws s3 ls --no-sign-request s3://mevadata-public-01/`
 - Annotations: distributed separately from video (VERIFY: find the official source via mevadata.org; confirm format).
 
@@ -287,7 +287,7 @@ search:
 **Rules.** Tuning split: free. Dev: gates and ablations. **Test: one run, step 8.2, frozen config.** No rewording, tweaking or swapping after seeing test results.
 
 ## 1.11 Known limitations (report honestly)
-Single frames can't show actions (mitigated by action/event branches) · small objects (mitigated by crops) · detector misses in thermal IR and at distance · tracks break under occlusion and at low fps; a stop rule can fire on traffic queues · thermal IR breaks colour queries · weak on attribute binding/counting/negation · scripted dataset · CLIP's documented demographic biases (Radford et al., 2021) — never present Rewind as identifying people · automation bias (coverage line) · SHA-256 proves integrity since import, not authenticity; legal admissibility out of scope · solo query writing (mitigated by freezing first).
+Single frames can't show actions (mitigated by action/event branches) · small objects (mitigated by crops) · detector misses in thermal IR and at distance · tracks break under occlusion and at low fps; a stop rule can fire on traffic queues · thermal IR breaks colour queries · weak on attribute binding/counting/negation · scripted dataset · CLIP's documented demographic biases (Radford et al., 2021) — never present Rewind as identifying people · automation bias (coverage line) · SHA-256 proves integrity since import, not authenticity; legal admissibility out of scope · test queries drafted by Claude Code agents from labels and keyframes, reviewed and approved by Ashutosh, frozen before any search code existed (deviation from 1.10 / step 2.2; disclosed in README and test_results.md).
 
 ---
 

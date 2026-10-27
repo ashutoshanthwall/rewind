@@ -87,7 +87,9 @@ metrics:
   event_tolerance_s: 2.0         # detected vs annotated events: spans widened by this (clocks +/- 1 s each)
 baselines:
   # step 2.3 (rewind/eval/baselines.py, scripts/run_baselines.py)
-  segment_s: 60                  # baselines rank 60 s segments (Rewind clips are capped at 60 s + context)
+  segment_s: 60                  # baselines rank 60 s segments. Rewind's clips are capped at 60 s but are typically
+                                 # ~10-12 s, so unit-count metrics (mAP, instance recall, R@k) are not comparable
+                                 # across systems; seconds watched is (pre-Phase-10 review, metrics-time-1)
   random_seed: 23
   random_repeats: 100            # random order: metrics averaged over this many seeded shuffles per query
   witness_window_s: 600          # witness time +/- 10 min (CLAUDE.md 1.10); witness time = true event middle
@@ -257,8 +259,9 @@ ui:
   default_window_minutes: 10
   deep_k: 800                       # "Search deeper" button in the fallback panel: hits per branch instead of
                                     # search.k_per_index. A USER FALLBACK OUTSIDE THE TESTED CONFIGURATION (8.2 used
-                                    # k_per_index); dev, exploratory (pre-Phase-10 review, weakness-5): k = 800 found
-                                    # 11/12 vs 9/12. Must be <= search.ef_search
+                                    # k_per_index); dev, exploratory, reviewers' scratch sweep (not a committed
+                                    # script; pre-Phase-10 review, weakness-5): k = 800 found 11/12 vs 9/12.
+                                    # Must be <= search.ef_search
   fallback_motion_k: 12             # motion-ranked segments offered when the event is not in the list (step 3.2
                                     # baseline: segments of baselines.segment_s by mean MOG2 activity)
   # Camera place labels for the camera filter (UI only; search ignores them). From frames viewed by Claude (8.3

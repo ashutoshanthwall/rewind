@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → 8.2 test run DONE (median 1,173 s, 13/24 found) → 8.3 DONE → 9.1 UI DONE → next: 10 packaging; sensitivity analysis waits for Ashutosh's proxy check** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **review done and acted on (no test number changed) → next: 10 packaging** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -29,7 +29,7 @@ Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action we
 **Open issues**
 - Known limitation: the git and config hashes are read when the row is logged, not when the run started. If code or config is edited during a multi-hour job, the row describes the end state. Don't edit tracked files while a logged job is running.
 - No conda/mamba on this machine. Step 0.2 must decide between installing Miniforge and using a plain venv.
-- System Python is 3.14.8, which is very new. PyTorch/open_clip wheels may not exist for it yet (VERIFY at 0.2). A conda env pinned to 3.11/3.12 avoids this.
+- System Python is 3.14.8, which is very new. PyTorch/open_clip wheels may not exist for it yet (VERIFY at 0.2). A conda env pinned to 3.11/3.12 avoids this. **[Closed: pyproject pins requires-python ==3.11.*; [review 27 Oct]]**
 
 **Key numbers**
 - 22/22 tests pass (0.52 s). 14 `TBD` keys in `config.yaml`. 0 rows in `results/experiments.csv` (header only).
@@ -151,7 +151,7 @@ Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action we
 - **Step 8.3 (failure analysis):** add the failure cause **"correct but unlabelled"**.
 
 **Open issues**
-- VERIFY at 1.3: `tsr0` end frame inclusive or exclusive (`empty_37` spans `[0, 9000]`, the clip has frames 0-8999).
+- VERIFY at 1.3: `tsr0` end frame inclusive or exclusive (`empty_37` spans `[0, 9000]`, the clip has frames 0-8999). **[Closed at 1.3; [review 27 Oct]]**
 - VERIFY at 1.3: how CMU and UMD cut timespans (numbering, boundary-crossing activities, agreement with Kitware) and
   how to merge two sources on the same IR clip (de-duplicate by temporal overlap, never sum).
 - VERIFY: whether training-level Kitware labels are as complete as evaluation-level ones (affects 129 RGB clips).
@@ -992,7 +992,7 @@ amends them. No pipeline code, config or data changed.
 **What this means for the remaining gates**
 - **Gate 3.3 (detector):** has a license side (Ultralytics AGPL-3.0 vs YOLOX Apache-2.0), so **Ashutosh decides**.
   Claude provides measured detection recall vs MEVA annotated actor boxes instead of the 50-frame eyeball check.
-  VERIFY: the boxes (`geom.yml`) aren't fetched yet; check the download size first (ask if over 1 GB).
+  VERIFY: the boxes (`geom.yml`) aren't fetched yet; check the download size first (ask if over 1 GB). **[Closed: fetched at step 1.3, see that step; [review 27 Oct]]**
 - **Gates 4.4, 5.1, 6.2, 8.1:** Claude decides using the confirmed paired rule (open-issue item 8). Adopt the more
   complex variant only if its mean is better **and** it wins on more queries than it loses; otherwise keep the
   simpler one. Gate 6.2 also has the Wed 28 Oct 13:00 hard stop and the precision/recall check on tuning.
@@ -1707,7 +1707,7 @@ metric of step 5.1 is computed. No post-hoc reinterpretation (rule above).
   weights, training data VIDAL-10M CC-BY-NC-4.0 to be cited; zero-shot MSR-VTT R@1 42.8 per the paper). Chosen
   over `LanguageBind_Video` (LoRA: needs peft), `_FT` (older) and `Huge_V1.5_FT` (H/14, 1024-d, 4.8 GB fp32: tight
   on 6 GB for +2 R@1 on web video). Sources: HF config.json and the repo (research notes from this session).
-  VERIFY on load: projection dim and num_frames from the downloaded config.
+  VERIFY on load: projection dim and num_frames from the downloaded config. **[Closed: read from config.json in rewind/embed/languagebind.py; the fetch script now also gets config/tokenizer, sha256-checked; [review 27 Oct]]**
   - Input: 8 frames per window at s, s + 0.5, ..., s + 3.5 s (decoded frame round(t * fps)). Each frame becomes
     the **same `pad` view as (a)**: whole frame letterboxed into a square (no centre crop: it lost 28 % of tuning
     events, open-issue item 4), resized to 224 (bicubic, antialias) and normalised with the OpenAI CLIP mean/std
@@ -2099,15 +2099,16 @@ cap; CPU load was only ~3.5/16). It went back to 32 s when tracking ended (lapto
   |---|---|---|---|
   | LanguageBind video model code | `rewind/embed/languagebind_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2023 PKU-YUAN's Group | github.com/PKU-YuanGroup/LanguageBind @ `7070c53`; Zhu et al., ICLR 2024 |
   | transformers CLIP pieces | `rewind/embed/languagebind_vendor/clip_v4_30_2.py` (`LICENSE-transformers`) | Apache-2.0, (c) 2021 The OpenAI Team Authors and The HuggingFace Team | transformers `v4.30.2`, modified imports |
-  | LanguageBind_Video_V1.5_FT weights | `artifacts/weights/` (not in git) | MIT (model card); training data VIDAL-10M is CC-BY-NC-4.0 | HF `LanguageBind/LanguageBind_Video_V1.5_FT` @ `5d53aab` |
+  | LanguageBind_Video_V1.5_FT weights | `artifacts/weights/` (not in git) | MIT (model card: "the majority of this project"); training data VIDAL-10M is CC-BY-NC-4.0: treat as research/non-commercial. Used only for the action ablations and the secondary result, not by the frozen config | HF `LanguageBind/LanguageBind_Video_V1.5_FT` @ `5d53aab` |
   | YOLOX model code | `rewind/detect/yolox_vendor/` (`LICENSE`, `NOTICE.md`) | Apache-2.0, (c) Megvii Inc. | PyPI sdist yolox 0.3.0; Ge et al. 2021 |
   | YOLOX-s weights | `artifacts/weights/yolox_s.pth` | Apache-2.0 | YOLOX release `0.1.1rc0` |
-  | CLIP ViT-B-16 weights `laion2b_s34b_b88k` | HF cache (not in git) | MIT (model card, verified at step 4.2 prep) | HF `laion/CLIP-ViT-B-16-laion2B-s34B-b88K` @ `7288da5a`; Radford et al. 2021 |
-  | open_clip library | pip dependency | VERIFY at 10.1 (not vendored) | `open-clip-torch` 3.3.0 |
+  | CLIP ViT-B-16 weights `laion2b_s34b_b88k` | HF cache (not in git) | MIT (model card, verified at step 4.2 prep); **the card puts any deployed use and surveillance / facial recognition out of scope** (quoted in README, read 27 Oct) | HF `laion/CLIP-ViT-B-16-laion2B-s34B-b88K` @ `7288da5a`; method Radford et al. 2021; weights by OpenCLIP (Ilharco et al. 2021, doi:10.5281/zenodo.5143773) on LAION-2B (Schuhmann et al., NeurIPS 2022 D&B) |
+  | open_clip library | pip dependency | MIT (installed dist-info, checked 27 Oct) | `open-clip-torch` 3.3.0; cite OpenCLIP (above) |
   | MEVA annotations | `data/annotations/meva-data-repo/` | CC-BY-4.0 (its LICENSE, step 0.3) | Kitware `meva-data-repo` @ `421841a`; Corona et al., WACV 2021 |
-  | MEVA video | `data/raw/` | VERIFY at 10.1 (mevadata.org terms) | `s3://mevadata-public-01/` |
+  | MEVA video | `data/raw/` | CC BY 4.0 (meva-data-repo LICENSE; mevadata.org: "All MEVA data is available for use under a CC BY-4.0 license", read 27 Oct). Credit + license link + note of changes on shared frames (README, failures.md) | `s3://mevadata-public-01/` |
   | ByteTrack tracker | `rewind/track/bytetrack_vendor/` (`LICENSE`, `NOTICE.md`) | MIT, (c) 2021 Yifu Zhang | github.com/FoundationVision/ByteTrack @ `d1bf019`; Zhang et al., ECCV 2022. Used at step 6.1; the event branch was dropped at Gate 6.2 |
-  | scipy | pip dependency (step 6.1) | BSD-3-Clause (VERIFY at 10.1) | 1.17.1 |
+  | scipy | pip dependency (step 6.1) | BSD (installed LICENSE.txt, checked 27 Oct) | 1.17.1 |
+  | FFmpeg + PyAV | system `ffmpeg` (libx264) for proxies; `av` wheels for decoding | FFmpeg LGPL/GPL by build; PyAV BSD-3-Clause but its wheels bundle GPL x264/x265 (used as tools; review GPL before shipping an environment) | Fedora ffmpeg-free 8.1.3; av 18.1.0 |
 
 ## Step 7.1 — engine inspection (read-only; Mon 26 Oct ~13:20, while 5.2 runs; nothing compiled or changed)
 
@@ -2392,7 +2393,7 @@ Commits: `5b20e29` 7.1 · `316b3cd` 7.4 · `47321eb` 7.3 · `6bd4bfd` 7.2. pytes
   lock, pybind11). 12 indexes: appearance 175,039 rows (`pad/motion/raw` of the 456,293 stored vectors), action
   44,682. Build 3 min 26 s, load 2.4 s.
 - **7.2** At real sizes HNSW gives little or no speed-up over NumPy brute force (appearance 13.7 vs 18.6 ms; action
-  slower, 9.5 vs 7.0 ms) at recall@200 ~0.94 (ef 200). It pays off only at 1M+ (exact 106–488 ms vs HNSW 3–12 ms), where
+  slower, 9.5 vs 7.0 ms) at recall@200 ~0.94 (ef 200). **[Superseded at the review, 27 Oct: at 1M+ HNSW recall was 0.02–0.07 on random vectors, so no speed advantage at scale is shown; use docs/deck_notes.md.]** It pays off only at 1M+ (exact 106–488 ms vs HNSW 3–12 ms), where
   random-data recall is uninformative.
 - **7.3** API (`/search`, `/coverage`): start-up 12.3 s; **end-to-end median 46 ms, p95 48 ms** over 20 queries.
 - **7.4** Fusion + grouping with "why it matched"; action weight by the pre-registered rule on tuning:
@@ -2467,7 +2468,7 @@ measured numbers:
 - recall@200 ≈ 0.99 vs exact search at ef 800 (0.995 appearance, 0.993 action). "Near-exact", not "exact": it is
   below 1;
 - the honest finding: at our sizes (≤175k vectors per branch) HNSW is about on par with NumPy brute force
-  (appearance 13.7 vs 18.6 ms; action slower, 9.5 vs 7.0 ms at ef 200); it pulls clearly ahead at 1M (3 ms vs 106 ms,
+  (appearance 13.7 vs 18.6 ms; action slower, 9.5 vs 7.0 ms at ef 200); **[Superseded at the review, 27 Oct: do not quote; exact NumPy is faster than the shipped HNSW (ef 800) at our size, ~19 vs ~26 ms, and the 1M figure had recall 0.02; deck wording in docs/deck_notes.md]** it pulls clearly ahead at 1M (3 ms vs 106 ms,
   random vectors). The crossover between 175k and 1M was not measured, so say "beyond a few hundred thousand to ~1M
   vectors", not an exact point;
 - also: drop GoogleTest and cpp-httplib (Phase 7 summary, flag 4).
@@ -2613,7 +2614,7 @@ validated before any is written. Re-rehearsed on dev; committed `d3251a5`; guard
 **Run:** once, at `d3251a5`, config hash `9917a937…` = frozen; query hashes checked; marker
 `results/reports/test_run.started` (one line). Test: 200 clips, 16.67 h, 6 cameras; 34 queries (24 specific, 10
 category). Report `results/reports/test_results.md`; per query `test_rows.csv`; clips `test_clips.json`; event ranks
-`test_event_ranks.csv`; figures `results/figures/test_headline.png`, `test_recall.png`; 7 experiments rows (split test).
+`test_event_ranks.csv`; figures `results/figures/test_headline.png`, `test_recall.png`; 6 experiments rows (split test) [corrected from 7 at the review].
 
 | system | median s watched [95% CI] | mean s | found (specific) | R@10 | category mAP@50 |
 |---|---|---|---|---|---|
@@ -2625,7 +2626,7 @@ category). Report `results/reports/test_results.md`; per query `test_rows.csv`; 
 | *secondary (action w2, pre-declared)* | *695 [607, 31,923]* | *21,145* | *16/24* | *0.125* | *0.104* |
 
 **What the numbers say (independent recompute by a subagent from the committed outputs: every number reproduced):**
-- Rewind's median beats every baseline (26x sequential, 2.5x the perfect witness), **but the median is fragile**: it
+- Rewind's median beats every baseline ~~(26x sequential, 2.5x the perfect witness)~~ **[ratios superseded by fc697cd: removed as overstating; quote the median with its CI and 13/24]**, **but the median is fragile**: it
   is the mean of the 12th / 13th values (933, 1,412 s) and needs 13 hits of 24; one fewer hit → ~30,800 s. **No
   paired-saving CI excludes zero** (e.g. vs witness +1,404 [−58,082, +2,481]); "13 faster / 11 slower" vs every
   baseline is simply hit vs miss. The ratio-of-medians column overstates and must not be quoted without the CIs.
@@ -2633,13 +2634,13 @@ category). Report `results/reports/test_results.md`; per query `test_rows.csv`; 
 - When Rewind finds the event, review takes 146–1,412 s; but it ranks in the top 10 only once (R@10 0.042, R@1 0).
   6 of 13 hits have no in-event vector in the top 200 (hits via neighbouring frames + ±5 s context; allowed by the
   frozen hit definition, but "found" ≠ "a matched frame showed the event").
-- Category queries: no better than sequential or motion (mAP@50 0.140 vs 0.174 / 0.158, overlapping CIs).
+- ~~Category queries: no better than sequential or motion (mAP@50 0.140 vs 0.174 / 0.158, overlapping CIs).~~ **[Withdrawn at the review (metrics-time-1): category mAP / instance recall / R@k count ranked units, and the baselines' 60 s segments vs Rewind's ~10–12 s clips make them not comparable across systems; logged in test_results.md.]**
 - RGB vs IR (specific, descriptive n = 4 IR): IR 1/4 found; RGB kitware-eval 5/8, kitware-train 7/12.
 - Pipeline recall: appearance 23/24 (tes-s16 dropped by dedup), action 24/24.
 - **Secondary (pre-declared, cannot replace the primary):** finds 3 more events (16/24; median 695 s) but is slower on
-  20/24 queries (paired −352 s [−706, −270], CI excludes 0): every event both systems find ranks lower. Same pattern as
+  20/24 queries (paired −352 s [−706, −270], CI excludes 0) **[corrected at the review (claims-1): 8 of those 20 are misses by both (list length only); of 13 events both find, 12 rank lower and tes-s11 ranks higher; under the gate's both-miss-as-tie convention the difference is not clearly non-zero]**. Same pattern as
   dev (F2), now on test.
-- Report wording issues noted, report not edited (nothing changed after the run): camera-table heading says
+- Report wording issues noted, report not edited at the time (nothing changed after the run) **[later: wording corrected in fc697cd and review caveats added 27 Oct, both logged in the report's corrections section; no number changed]**: camera-table heading says
   "descriptive" though G424 / G436 (n ≥ 5) carry CIs; `IR@k` CSV keys mean instance recall, not infrared; the Summary's
   category columns are RGB-only (stated in the category section, not the Summary).
 
@@ -2679,14 +2680,14 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
   events found; no paired CI excludes 0; mean worse than witness and motion.** Honest reading: Rewind is a strong
   first pass when it finds the event and a costly one when it misses; it needs a fallback (witness window / motion)
   for misses.
-- 8.3: small/far objects (5) and IR (3) cause 8 of 11 misses.
+- 8.3: small/far objects (5) and IR (3) cause 8 of 11 misses — **provisional causes as judged by Claude from single frames (n = 22 images), not confirmed by Ashutosh** [review 27 Oct].
 - Next: Phase 9 (UI). Deck/README must quote the median **with its CI and the 13/24 hit count**, not the ratio alone.
 
 ## After the test run — Ashutosh's requests (Tue 27 Oct, ~20:40)
 
-1. **Test labels and primary 8.2 results unchanged.** Sensitivity analysis prepared (`scripts/sensitivity_8.py`,
+1. **Test labels and primary 8.2 results unchanged.** ~~Sensitivity analysis prepared~~ **[DROPPED at the review, 27 Oct (Ashutosh): one-sided by design (misses → hits only, baselines kept strict, hits never audited) and it scored the different-day tes-s04 clip at 0 s; `scripts/sensitivity_8.py` deleted, never run on test, no number produced. tes-s19 is noted qualitatively in failures.md.]** (`scripts/sensitivity_8.py`,
    separate report `results/reports/sensitivity_8.2.md`, requires `--confirmed-by`; reads only 8.2 outputs) and
-   **not run on test yet: waits for Ashutosh to check the proxies.** Candidates, Rewind's clip vs the label:
+   **not run on test.** Candidates, Rewind's clip vs the label:
    - tes-s19: #3 G336 `data/proxy/2018-03-15.15-30-00.15-35-00.school.G336.mp4` 223–255 s (15:33:43–15:34:15) vs label
      G474 `…G474.mp4` 209.9–221.0 s (15:33:29.9–15:33:41.0): other camera, gap 2 s.
    - tes-s12: #3 G436 `data/proxy/2018-03-07.11-05-00.11-10-00.hospital.G436.mp4` 209–219 s (11:08:29–11:08:39) vs label
@@ -2736,7 +2737,7 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
   without the motion button. All-footage search: three day groups, days without candidates still shown (coverage).
 
 **Run:** `uv run uvicorn rewind.api.app:app --port 8000` → http://localhost:8000 (start-up ~10–15 s: indexes,
-encoders, motion scores). A server is running now from this session: PID in `results/logs/ui_server.pid`, log
+encoders, motion scores). A server was running during 9.1 (no longer): PID in `results/logs/ui_server.pid`, log
 `results/logs/ui_server.log`.
 
 **Open issues / for Ashutosh (👤 9.1):** try ~10 of your own queries; note anything slow or confusing. Not tested:
@@ -2754,6 +2755,83 @@ dark mode by eye, narrow phone widths, Firefox. Action-branch "matched by" is ne
   checkbox for all cameras), so the re-search was refused and old results stayed on screen. Checked after the fix in
   headless Chrome: F6 query → leave out G330 → no G330 in results, coverage "Searched 20.8 h … across 5 cameras … (left
   out: G330)", only the G330 chip struck through, link updated (viewed by Claude). Tests 396 pass.
+
+## Pre-Phase-10 review and actions (Tue 27 Oct, ~21:20–22:30)
+
+**Review** (`results/reports/review_pre10.md`, read-only, 8 reviewers + 8 skeptical verifiers): 73 findings, 0
+critical, 16 major, 57 minor. No test number miscomputed (headline, CIs, paired savings, baselines and timestamps
+recomputed); no evidence that test data influenced a decision. Ashutosh's instructions, carried out (no test number
+changed):
+
+- **Fixed — reproducibility:** `scripts/fetch_languagebind.sh` now fetches config + tokenizer files too (sha256-pinned;
+  identical to the files every action number used) and `LanguageBind` fails loudly when any is missing (+ test)
+  [repro-1]. `make_splits --from-committed` restores the frozen split into a fresh DB; verified on an emptied copy:
+  blocks / video_blocks / event_splits identical (+ test) [repro-2]. Commit `7972bcf`.
+- **Fixed — UI/API** (`70af4f2`): only branches with weight > 0 are loaded (no LanguageBind / action indexes at the
+  frozen weight 0; `/search` output byte-identical on 4 queries; GPU 1,547 → 777 MiB) [ui-9]; result actions re-search
+  the search on screen, not the edited form [ui-3]; repeated cameras deduplicated, empty list → 400 [ui-4]; `/thumb`
+  400 for t past the last frame and non-finite boxes, boxes clipped to the frame [ui-5]; pause once at clip end, then
+  native controls work [ui-8]; share-link time/window/camera checked with a visible notice, time bounds widened by the
+  largest window [ui-6]; errors clear stale results, live region, contrast, fieldset/legend [ui-7]; overlap note on
+  cards whose spans overlap (display only) [ui-2]; segment length from config [ui-10]; sampling note in the coverage
+  panel [assumptions-4]. **Optional "Search deeper (800 per index)"** in the "Not in the list?" panel, labelled as a
+  user fallback outside the tested configuration (`ui.deep_k`; API `depth`, response `tested_config`). Checked with
+  curl and in headless Chrome (viewed by Claude). Tests 400 pass.
+- **Fixed — disclosure and docs:** query authorship stated in `test_results.md` (corrections 5), README and CLAUDE.md
+  1.11 [leakage-3]; secondary reading corrected (8.2 bullet, F3, report note 9) [claims-1]; deck speed claims replaced
+  in `docs/deck_notes.md` (exact search faster at our size; "3 ms at 1M" dropped; superseded notes at the Phase 7
+  summary and decision 4) [claims-2, assumptions-2]; project `LICENSE` (MIT, Ashutosh's choice) and credits (MEVA CC BY
+  4.0, OpenCLIP/LAION, FFmpeg/PyAV, LanguageBind data CC BY-NC) in README and the credits table [licenses-1..7];
+  "research demo, not a deployed surveillance system" in README and deck notes, quoting the CLIP model card [licenses-2];
+  7 → 6 test experiment rows [leakage-6]; stale VERIFY markers closed inline + register below [assumptions-9];
+  failure causes marked as Claude's provisional judgement [claims-8, assumptions-3].
+- **Dropped:** the sensitivity analysis (script deleted; never run on test). tes-s19 kept as a qualitative note in
+  failures.md (possible unlabelled match on the co-located RGB camera), no number [leakage-1, leakage-2].
+- **Caveats logged** in `test_results.md` corrections 6–8: cross-system unit-count metrics not comparable, "category
+  no better" withdrawn [metrics-time-1]; miss-cost asymmetry beside the mean [metrics-time-2]; 6 of 13 hits via
+  neighbouring frames and ±5 s context [metrics-time-3].
+- **Not acted on (minor, left for 10.x or later):** repro-3..12 except as above, licenses-8..10, leakage-4/5/7,
+  claims-3..6/9, weakness-7..11; see the review file.
+
+### Known weaknesses and future work (from the review; all future evaluation on dev only, exploratory, rule pre-registered)
+
+1. **Crop budget and detection coverage** [weakness-1]. Retrieval uses ≤ 4 motion crops per frame: they cover 6 % of
+   annotated RGB people and 38 % of vehicles (tuning, crops_4.2); ≤ 4 detection-then-motion crops cover 15 % / 51 %,
+   all detections 40 % / 81 %. YOLOX-s itself: RGB people 0.41, vehicles 0.83, people < 5 % of frame height 0.24, IR ~0
+   (detector_3.3; Gate 3.3 not passed by its rule, kept by Ashutosh's documented decision). Detection crops lost on dev
+   mostly by crowding the shared 200-vector list. Next: crops as their own branch (own top-k, z-score), larger or
+   union crop budget, measured first by tuning coverage, then dev retrieval at equal review seconds.
+2. **Crops lose scene context** [weakness-2, F6, ui-1]. One raw-cosine top-200 over frames and crops; crops score
+   higher (dev 99th percentile 0.276 vs 0.221), so frames fill 5.9 % of slots and 9 / 12 dev specific queries get no
+   frame vector; a frame is scored by its best view. Next: frame and crop views as separate fusion branches, or crop +
+   w × same-frame score ("Later"); report the F6 query as a case. UI workaround: leave indoor cameras out.
+3. **Small and distant objects** [weakness-3]. The pad view shrinks 1920 px to 224 px (8.6×); 62 % of RGB person boxes
+   are < 5 % of frame height. 5 of 11 test misses were judged "object too small". Next: finer tiles near native
+   resolution, or a higher-resolution encoder (license and 6 GB VRAM to verify), evaluated by object-size bucket.
+4. **Thermal IR** [weakness-4]. Test IR 1/4 found, dev 0/2; IR vectors 3.8 % of the index; detector IR recall ~0; in-event
+   IR vectors score low for the text (not modality crowding, per the verifier). Next: IR-specific query phrasing or
+   per-modality normalisation, judged with recall-type metrics on contrib labels.
+5. **Few queries per gate** [weakness-6]. Every gate used 6–12 specific queries; half of dev is the indoor G330 (found
+   6/6 dev, 3/3 test; outside G330: dev 3/6, test 10/21); decisions flipped between gates (4.4 tie-break, 5.1 7/3/3,
+   7.4 a 17 s tie-break, 8.1 an 8/1/8 tie). Read "dropped at gate X" as "not shown to help here". Next: a larger dev set
+   stratified by camera and modality, magnitude-aware paired rules (F2).
+6. **Untuned list depth** [weakness-5]. k = 200 per index was the initial value, never swept; it is ~0.18 % of test
+   vectors. Dev, exploratory (reviewers' scratch sweep, exact search; not a committed script, so to be re-run by a
+   committed script before it is quoted): k = 200 → 9/12 found, median 394 s, mean 3,667 s;
+   k = 800 → 11/12, 648 s, 2,015 s; k = 2000 → 12/12, 871 s, 1,336 s: depth trades median for mean and found-rate.
+   Test misses' best in-event ranks (328 … 25,157) mean depth alone would recover only ~3–4 of 11. Next: choose depth
+   by a pre-registered dev rule; the UI's "Search deeper" is a user fallback until then.
+
+### VERIFY register (27 Oct)
+
+Closed: Python 3.14 (pinned 3.11); tsr0 inclusive end and CMU/UMD timing (step 1.3); geom.yml boxes (fetched at 1.3);
+LanguageBind projection dim / num_frames (read from config; config now fetched); MEVA license (CC BY 4.0); open_clip
+(MIT) and scipy (BSD) licenses. **Still open** (none changes a reported number as far as known): sub-second camera
+clock offsets (±1 s) and DST handling beyond the checked dates; sign of the clip-table offset; meaning of `empty_37` /
+`src_status`; contrib (IR) frame base (≤ 1 frame) and box timing, so IR label offsets are extrapolated from RGB
+[assumptions-5]; MEVA `updates-r13` not applied; YOLOX-s release-weights license inferred from the code repo and no
+published checksum [licenses-10]; camera indoor/outdoor labels from viewed frames, not checked against MEVA's camera
+table [assumptions-7]; the conda-channel remark at step 0.2 (uv used instead).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
@@ -2783,7 +2861,8 @@ dark mode by eye, narrow phone widths, Firefox. Action-branch "matched by" is ne
 
 - **F3 — Action branch: recall up, ranking down (test, secondary result; 27 Oct).** The pre-declared action-weight-2
   variant found 3 events appearance missed (a brief action, a ~20 px person, a thermal car; action in-event ranks
-  181 / 214 / 448 vs appearance 3,380 / 14,050 / 1,531) but ranked 20 of 24 events lower (paired −352 s [−706, −270]).
+  181 / 214 / 448 vs appearance 3,380 / 14,050 / 1,531); of the 13 events both systems find, 12 rank lower under it and
+  one (tes-s11) higher; 8 queries are missed by both (their "slower" is list length only) [corrected at the review, claims-1].
   Fusion by z-score at a fixed weight trades precision for recall; a reranking or per-query gating design is future work.
 - **F4 — Misses dominate the cost.** 11 / 24 test misses each cost a full 16.7 h review; the median depends on the
   13th hit. A product needs a stated fallback for "not in the list" (e.g. witness window, motion ranking), and the
