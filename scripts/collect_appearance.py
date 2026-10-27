@@ -6,6 +6,8 @@ Reads the step 4.2 outputs of every clip in the manifest (all splits: indexing u
   meta.parquet           vector_id + the per-clip metadata + clip name; rows in manifest order (camera, start time)
   camera_means.parquet   per (frame_mode, crop_source) variant and camera: n vectors and the mean vector, over all
                          of that camera's vectors in the variant (CLAUDE.md step 4.3; no labels used)
+  camera_type_means.parquet  the same per camera AND type (frame / crop): appearance.center_groups camera_type
+                         (step 8.1 comparison, PROGRESS.md); column group = "<camera>/<type>"
   centered_<frame_mode>_<crop_source>.npy   the config's main variant, mean-centered and re-normalised (float16),
                          with centered_<...>_ids.npy (vector_ids of its rows)
 appearance.mean_center decides which one search uses; both are kept for the 4.4 ablation (centering of other variants
@@ -25,19 +27,24 @@ from rewind.embed.crops import VARIANTS
 from rewind.embed.store import FRAME_MODES, load_appearance, model_dir, variant_mask
 from rewind.ingest.manifest import connect, load_videos
 from rewind.paths import REPO_ROOT, display_path
-from rewind.search.core import camera_means, mean_center
+from rewind.search.core import camera_means, center_labels, mean_center
+
+MEANS_FILE = {"camera": "camera_means.parquet", "camera_type": "camera_type_means.parquet"}
 
 
 def index_dir(root: Path, model: str, tag: str) -> Path:
     return model_dir(root, model, tag) / "index"
 
 
-def load_means(root: Path, model: str, tag: str, frame_mode: str, crop_source: str) -> dict:
-    df = pd.read_parquet(index_dir(root, model, tag) / "camera_means.parquet")
+def load_means(root: Path, model: str, tag: str, frame_mode: str, crop_source: str,
+               center_groups: str = "camera") -> dict:
+    """Group label (rewind.search.core.center_labels) -> mean vector of one variant, over all footage."""
+    df = pd.read_parquet(index_dir(root, model, tag) / MEANS_FILE[center_groups])
     df = df[(df.frame_mode == frame_mode) & (df.crop_source == crop_source)]
     if df.empty:
-        raise ValueError(f"no camera means for {frame_mode}/{crop_source}: run scripts.collect_appearance")
-    return {r.camera_id: np.asarray(r.mean, dtype=np.float32) for r in df.itertuples()}
+        raise ValueError(f"no {center_groups} means for {frame_mode}/{crop_source}: run scripts.collect_appearance")
+    key = "camera_id" if center_groups == "camera" else "group"
+    return {getattr(r, key): np.asarray(r.mean, dtype=np.float32) for r in df.itertuples()}
 
 
 def main() -> None:
@@ -62,14 +69,19 @@ def main() -> None:
     out = index_dir(args.art, model, tag)
     out.mkdir(parents=True, exist_ok=True)
 
-    rows = []
+    rows, type_rows = [], []
     cams = meta["camera_id"].to_numpy()
+    groups = center_labels(cams, meta["type"].to_numpy(), "camera_type")
     for fm in FRAME_MODES:
         for cs in VARIANTS:
             keep = variant_mask(meta, fm, cs, a["max_crops_per_frame"])
             means = camera_means(vecs[keep], cams[keep])
             rows += [{"frame_mode": fm, "crop_source": cs, "camera_id": c, "n": int((cams[keep] == c).sum()),
                       "mean": m.tolist()} for c, m in means.items()]
+            means = camera_means(vecs[keep], groups[keep])
+            type_rows += [{"frame_mode": fm, "crop_source": cs, "group": g, "camera_id": g.split("/")[0],
+                           "type": g.split("/")[1], "n": int((groups[keep] == g).sum()), "mean": m.tolist()}
+                          for g, m in means.items()]
     means_df = pd.DataFrame(rows)
 
     fm, cs = a["frame_mode"], a["crop_source"]
@@ -81,6 +93,7 @@ def main() -> None:
     for name, write in (("vectors.npy", lambda f: np.save(f, vecs)),
                         ("meta.parquet", lambda f: meta.to_parquet(f, index=False)),
                         ("camera_means.parquet", lambda f: means_df.to_parquet(f, index=False)),
+                        ("camera_type_means.parquet", lambda f: pd.DataFrame(type_rows).to_parquet(f, index=False)),
                         (f"centered_{fm}_{cs}.npy", lambda f: np.save(f, centered)),
                         (f"centered_{fm}_{cs}_ids.npy", lambda f: np.save(f, meta["vector_id"].to_numpy()[keep]))):
         tmp = out / (name + ".tmp")

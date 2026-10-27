@@ -162,6 +162,8 @@ appearance:
   frame_mode: pad                   # tiles2 | pad; GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md)
   batch_size: 64                    # images per CLIP call; 16-256 run at the same speed (step 1.4)
   mean_center: false                # GATE 4.4 (Ashutosh, 26 Oct, PROGRESS.md): centering lost 3/2/12 with motion crops on dev
+  center_groups: camera             # camera | camera_type: what one mean is taken over when mean_center is true;
+                                    # camera_type = per camera AND type (frame views vs crops). Step 8.1 comparison
 action:
   enabled: true                     # GATE 5.1 (26 Oct): pre-registered paired rule adopted LanguageBind, 7/3/3 (PROGRESS.md)
   model: LanguageBind_Video_V1.5_FT  # dual encoder, 768-d; settings in action.languagebind

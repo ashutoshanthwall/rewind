@@ -86,6 +86,20 @@ def _clip(vid: int, hits: list, duration: float, cfg: SearchConfig) -> Clip:
                 float(np.mean(top)), list(hits))
 
 
+CENTER_GROUPS = ("camera", "camera_type")
+
+
+def center_labels(camera_ids, types, center_groups: str) -> np.ndarray:
+    """Group label of each vector for mean-centering: its camera, or (step 8.1) its camera and type ("G330/frame",
+    "G330/crop"), so frame views and crops get separate means."""
+    cams = np.asarray(camera_ids, dtype=object)
+    if center_groups == "camera":
+        return cams
+    if center_groups == "camera_type":
+        return np.array([f"{c}/{t}" for c, t in zip(cams, types)], dtype=object)
+    raise ValueError(f"appearance.center_groups {center_groups!r}: expected one of {CENTER_GROUPS}")
+
+
 def camera_means(vectors: np.ndarray, groups: np.ndarray) -> dict:
     """Mean vector (float32) of each group (camera)."""
     x = vectors.astype(np.float32)

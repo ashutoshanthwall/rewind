@@ -3,7 +3,7 @@
 Branches (rewind.search.engine.active_branches): appearance always, action if action.enabled. Vectors:
   appearance  the collected step 4.3 index (scripts/collect_appearance.py), rows of the config's variant
               (appearance.frame_mode / crop_source / max_crops_per_frame; mean-centered with the all-footage camera
-              means if appearance.mean_center); 175,039 rows for pad/motion/raw
+              means if appearance.mean_center, per appearance.center_groups); 175,039 rows for pad/motion/raw
   action      the step 5.2 window vectors of every clip (scripts/embed_action.py), window time = centre
 Each camera's rows -> float32, re-normalised -> vectors.f32 + manifest.json -> engine loads them back from the file
 (SHA-256 + norm checks) -> HNSW build (search.hnsw, ef search.ef_search) -> graph.hnsw; meta.parquet maps row ->
@@ -28,7 +28,7 @@ from rewind.embed.store import variant_mask
 from rewind.experiment_log import run_stamp
 from rewind.ingest.manifest import connect, load_videos
 from rewind.paths import REPO_ROOT, display_path
-from rewind.search.core import mean_center
+from rewind.search.core import center_labels, mean_center
 from rewind.search.engine import (EngineConfig, active_branches, branch_model, engine_module, index_name,
                                   index_path, to_unit_float32, wall_seconds, write_store)
 from scripts.collect_appearance import index_dir, load_means
@@ -48,8 +48,9 @@ def appearance_rows(cfg: dict, art: Path) -> tuple[np.ndarray, pd.DataFrame]:
     m = meta[keep].reset_index(drop=True)[APPEARANCE_COLUMNS]
     x = np.asarray(vecs[np.flatnonzero(keep)])
     if a["mean_center"]:
-        x = mean_center(x, m["camera_id"].to_numpy(),
-                        load_means(art, a["model"], a["pretrained"], a["frame_mode"], a["crop_source"]))
+        x = mean_center(x, center_labels(m["camera_id"], m["type"], a["center_groups"]),
+                        load_means(art, a["model"], a["pretrained"], a["frame_mode"], a["crop_source"],
+                                   a["center_groups"]))
     return x, m
 
 

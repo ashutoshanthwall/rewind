@@ -72,11 +72,13 @@ def to_unit_float32(x: np.ndarray) -> np.ndarray:
 
 def branch_model(cfg: dict, branch: str) -> str:
     """Model name recorded in an index's manifest and graph: the engine refuses an index built for another one.
-    Appearance includes the search variant (frame_mode / crop_source / centering), which changes the vectors."""
+    Appearance includes the search variant (frame_mode / crop_source / centering), which changes the vectors.
+    Per-camera centering keeps its step 7.1 name ("centered"); per camera and type is "centered_camera_type"."""
     if branch == "appearance":
         a = cfg["appearance"]
-        return (f"{a['model']}/{a['pretrained']}:{a['frame_mode']}/{a['crop_source']}/"
-                f"{'centered' if a['mean_center'] else 'raw'}")
+        center = "raw" if not a["mean_center"] else (
+            "centered" if a["center_groups"] == "camera" else f"centered_{a['center_groups']}")
+        return f"{a['model']}/{a['pretrained']}:{a['frame_mode']}/{a['crop_source']}/{center}"
     if branch == "action":
         return cfg["action"]["model"]
     raise ValueError(f"unknown branch {branch!r}; expected one of {BRANCHES}")

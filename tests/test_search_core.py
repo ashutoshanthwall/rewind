@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from rewind.ingest.manifest import Video
-from rewind.search.core import Clip, SearchConfig, group_hits, mean_center, top_k
+from rewind.search.core import Clip, SearchConfig, center_labels, group_hits, mean_center, top_k
 
 CFG = SearchConfig(k=100, merge_gap_s=5, max_clip_s=60, context_s=5)
 
@@ -66,6 +66,23 @@ def test_mean_center_per_group():
     assert out[2] == pytest.approx([0, -1]) and out[3] == pytest.approx([0, 1])
     with pytest.raises(ValueError, match="camera mean"):
         mean_center(np.array([[1.0, 0.0]]), np.array(["A"]))
+
+
+def test_mean_center_per_camera_and_type():
+    # step 8.1: one camera, two frames and two crops. Per camera only: mean of all four = (1.5, 1.5).
+    # Per camera and type: frames mean (1, 2), crops mean (2, 1).
+    x = np.array([[1, 1], [1, 3], [3, 1], [1, 1]], np.float32)
+    types = ["frame", "frame", "crop", "crop"]
+    labels = center_labels(["G1"] * 4, types, "camera_type")
+    assert list(labels) == ["G1/frame", "G1/frame", "G1/crop", "G1/crop"]
+    out = mean_center(x, labels)
+    # frames: (1,1)-(1,2) = (0,-1); (1,3)-(1,2) = (0,1). crops: (3,1)-(2,1) = (1,0); (1,1)-(2,1) = (-1,0)
+    assert out == pytest.approx(np.array([[0, -1], [0, 1], [1, 0], [-1, 0]]))
+    # per camera only, row 0: (1,1)-(1.5,1.5) = (-0.5,-0.5) -> (-0.707, -0.707): a different result
+    cam = mean_center(x, center_labels(["G1"] * 4, types, "camera"))
+    assert cam[0] == pytest.approx([-2 ** -0.5, -2 ** -0.5])
+    with pytest.raises(ValueError, match="center_groups"):
+        center_labels(["G1"], ["frame"], "type")
 
 
 def test_mean_center_with_given_means():
