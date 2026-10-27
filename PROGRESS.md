@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → confirmed by Ashutosh (option 1, + pre-declared secondary w2) → 8.2** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → 8.2 test run DONE (median 1,173 s, 13/24 found) → 8.3 DONE → next: Phase 9 UI** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2601,6 +2601,87 @@ clean commit `76697cc`; plan pre-registered in `dde89b0` before any result)
   config file (and its frozen hash) is unchanged.
 - **Finding F2** (below): the paired rule ignores magnitude. Recommended for future work; **not applied here**.
 
+## Step 8.2 — THE single test run (Tue 27 Oct, 20:29; outputs committed unchanged in `0a978de`)
+
+**Before the run:** pre-run independent review of `scripts/test_run.py` (subagent, dev rehearsal only) found two
+protocol gaps against pre-committed rules: n < 5 cells must show per-query values only, no CI (PROGRESS item 8), and a
+per-camera breakdown (item 7). Both fixed, plus IR wording + offset caveat, instance and pipeline recall in the report,
+`--after-crash` guard (refuses without a marker / after results exist), models loaded before the marker, all log rows
+validated before any is written. Re-rehearsed on dev; committed `d3251a5`; guard check refused as intended.
+(The 8.1 report printed CIs in its n < 5 cells, against the same rule; no decision used them.)
+
+**Run:** once, at `d3251a5`, config hash `9917a937…` = frozen; query hashes checked; marker
+`results/reports/test_run.started` (one line). Test: 200 clips, 16.67 h, 6 cameras; 34 queries (24 specific, 10
+category). Report `results/reports/test_results.md`; per query `test_rows.csv`; clips `test_clips.json`; event ranks
+`test_event_ranks.csv`; figures `results/figures/test_headline.png`, `test_recall.png`; 7 experiments rows (split test).
+
+| system | median s watched [95% CI] | mean s | found (specific) | R@10 | category mAP@50 |
+|---|---|---|---|---|---|
+| **Rewind (primary, frozen)** | **1,173 [376, 61,036]** | 28,277 | **13/24** | 0.042 | 0.140 [0.088, 0.202] |
+| sequential | 30,507 [27,339, 33,359] | 30,282 | (all) | 0.007 | 0.174 |
+| random | 29,979 | 29,348 | (all) | 0.017 | 0.066 |
+| witness ±10 min (perfect witness) | 2,977 [2,495, 3,263] | 2,927 | (all) | 0.090 | — |
+| motion-ranked | 20,003 [10,984, 28,268] | 20,676 | (all) | 0.000 | 0.158 |
+| *secondary (action w2, pre-declared)* | *695 [607, 31,923]* | *21,145* | *16/24* | *0.125* | *0.104* |
+
+**What the numbers say (independent recompute by a subagent from the committed outputs: every number reproduced):**
+- Rewind's median beats every baseline (26x sequential, 2.5x the perfect witness), **but the median is fragile**: it
+  is the mean of the 12th / 13th values (933, 1,412 s) and needs 13 hits of 24; one fewer hit → ~30,800 s. **No
+  paired-saving CI excludes zero** (e.g. vs witness +1,404 [−58,082, +2,481]); "13 faster / 11 slower" vs every
+  baseline is simply hit vs miss. The ratio-of-medians column overstates and must not be quoted without the CIs.
+- **On the mean, Rewind loses to witness (2,927) and motion (20,676)**: each of the 11 misses costs a full 16.7 h review.
+- When Rewind finds the event, review takes 146–1,412 s; but it ranks in the top 10 only once (R@10 0.042, R@1 0).
+  6 of 13 hits have no in-event vector in the top 200 (hits via neighbouring frames + ±5 s context; allowed by the
+  frozen hit definition, but "found" ≠ "a matched frame showed the event").
+- Category queries: no better than sequential or motion (mAP@50 0.140 vs 0.174 / 0.158, overlapping CIs).
+- RGB vs IR (specific, descriptive n = 4 IR): IR 1/4 found; RGB kitware-eval 5/8, kitware-train 7/12.
+- Pipeline recall: appearance 23/24 (tes-s16 dropped by dedup), action 24/24.
+- **Secondary (pre-declared, cannot replace the primary):** finds 3 more events (16/24; median 695 s) but is slower on
+  20/24 queries (paired −352 s [−706, −270], CI excludes 0): every event both systems find ranks lower. Same pattern as
+  dev (F2), now on test.
+- Report wording issues noted, report not edited (nothing changed after the run): camera-table heading says
+  "descriptive" though G424 / G436 (n ≥ 5) carry CIs; `IR@k` CSV keys mean instance recall, not infrared; the Summary's
+  category columns are RGB-only (stated in the category section, not the Summary).
+
+## Step 8.3 — failure analysis (Tue 27 Oct, ~20:35–21:00)
+
+`scripts/failures_8.py --n 11` (all 11 misses; reads only 8.2 outputs, keyframes, proxies) →
+`results/reports/failures.md`, `failures_8.3.csv`, `results/figures/failures/` (thumbnail strips). Causes labelled by
+Claude from the keyframe sheets and Rewind's returned frames (viewed by Claude, n = 22 images), in-event vector ranks
+and kept-frame times:
+
+| primary cause | n | queries |
+|---|---|---|
+| object too small | 5 | s04, s08, s12, s13, s17 |
+| IR | 3 | s10, s19, s20 |
+| action too brief | 1 | s01 (near miss: right bus, right camera, 4 s after the 2 s event) |
+| ambiguous query | 1 | s05 |
+| dropped by dedup | 1 | s16 (kept frames 135 → 145 s; the 1.7 s event falls in the max-gap hole) |
+
+- **For Ashutosh (can't decide from frames):** possible "correct but unlabelled / other camera": **tes-s19** (strongest:
+  bus pulling away on the co-located RGB camera G336 at 15:33:43, 3 s after the IR label; likely the same bus as
+  tes-s01), tes-s12 (same work scene on G436, 48 s earlier), tes-s04 (person at the rear of a dark car). Confirm on the
+  proxies. Labels stay as above unless you change them.
+- Detector miss / track broken: not applicable (motion crops; event branch dropped).
+- Ambiguous text contributes in 5 more (s10, s13, s17, s20, s05): returned clips often fit the words (real cyclists
+  passing the flagpole; white SUVs; dark cars at the entrance) but are not the one labelled event.
+
+## Phase 8 summary (Tue 27 Oct)
+
+Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 plan · `76697cc` centering + 8.1 code ·
+`3fccf5f` 8.1 results · `b7a0fbd`/`1635c50` freeze · `383bfca` secondary pre-declared · `d3251a5` test-run code ·
+`0a978de` **test outputs** · 8.3 (this commit). pytest 391 pass.
+- Prep: ef 800 (API 62 ms with both branches; **36 ms median / 39 ms p95 at the frozen config**); engine path = Gate
+  4.4 to the second (exact), HNSW changes one query by 13 s.
+- 8.1: both pre-registered comparisons kept the simple variant (action weight 0: 8/1/8 tie; per-type centering:
+  3/1/13). Frozen: appearance-only, pad/motion/raw, ef 800.
+- 8.2 headline: **median 1,173 s to the first correct clip vs 30,507 s sequential and 2,977 s perfect-witness; 13/24
+  events found; no paired CI excludes 0; mean worse than witness and motion.** Honest reading: Rewind is a strong
+  first pass when it finds the event and a costly one when it misses; it needs a fallback (witness window / motion)
+  for misses.
+- 8.3: small/far objects (5) and IR (3) cause 8 of 11 misses.
+- Next: Phase 9 (UI). Deck/README must quote the median **with its CI and the 13/24 hit count**, not the ratio alone.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
@@ -2626,6 +2707,14 @@ clean commit `76697cc`; plan pre-registered in `dde89b0` before any result)
   magnitude-aware rule (e.g. a paired CI on the mean / median difference, or counting a miss turned into a hit as
   decisive) is recommended for future work. **Not applied here**; the weight-2 variant is reported as a pre-declared
   secondary result on test (decision above).
+
+- **F3 — Action branch: recall up, ranking down (test, secondary result; 27 Oct).** The pre-declared action-weight-2
+  variant found 3 events appearance missed (a brief action, a ~20 px person, a thermal car; action in-event ranks
+  181 / 214 / 448 vs appearance 3,380 / 14,050 / 1,531) but ranked 20 of 24 events lower (paired −352 s [−706, −270]).
+  Fusion by z-score at a fixed weight trades precision for recall; a reranking or per-query gating design is future work.
+- **F4 — Misses dominate the cost.** 11 / 24 test misses each cost a full 16.7 h review; the median depends on the
+  13th hit. A product needs a stated fallback for "not in the list" (e.g. witness window, motion ranking), and the
+  coverage line must never imply absence.
 
 ---
 
