@@ -2682,6 +2682,27 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
 - 8.3: small/far objects (5) and IR (3) cause 8 of 11 misses.
 - Next: Phase 9 (UI). Deck/README must quote the median **with its CI and the 13/24 hit count**, not the ratio alone.
 
+## After the test run — Ashutosh's requests (Tue 27 Oct, ~20:40)
+
+1. **Test labels and primary 8.2 results unchanged.** Sensitivity analysis prepared (`scripts/sensitivity_8.py`,
+   separate report `results/reports/sensitivity_8.2.md`, requires `--confirmed-by`; reads only 8.2 outputs) and
+   **not run on test yet: waits for Ashutosh to check the proxies.** Candidates, Rewind's clip vs the label:
+   - tes-s19: #3 G336 `data/proxy/2018-03-15.15-30-00.15-35-00.school.G336.mp4` 223–255 s (15:33:43–15:34:15) vs label
+     G474 `…G474.mp4` 209.9–221.0 s (15:33:29.9–15:33:41.0): other camera, gap 2 s.
+   - tes-s12: #3 G436 `data/proxy/2018-03-07.11-05-00.11-10-00.hospital.G436.mp4` 209–219 s (11:08:29–11:08:39) vs label
+     G336 `data/proxy/2018-03-07.11-05-06.11-10-05.school.G336.mp4` 251.3–260.7 s (11:09:17.3–11:09:26.7): gap ~38 s.
+   - tes-s04: #1 G424 `data/proxy/2018-03-11.16-35-02.16-40-02.school.G424.mp4` 197–207 s (**11 Mar** 16:38:19) vs label
+     G424 `data/proxy/2018-03-07.11-05-05.11-10-05.school.G424.mp4` 76.4–78.6 s (**7 Mar** 11:06:21): a different day,
+     so it cannot be the labelled event (at most a similar one) — flagged to Ashutosh.
+   - Counting rule: the person's judgement replaces the hit rule's same-camera and time-overlap conditions; seconds
+     otherwise by the frozen rule; time gap printed per clip.
+2. **Report wording corrected** (`fc697cd`; logged in a "Corrections after the run" section of `test_results.md`):
+   ratio-of-medians column removed (values listed there), camera heading, "(RGB)" on category columns,
+   `IR@k` → `instance_recall@k` in `test_rows.csv` (experiments.csv keeps `IR@k`, append-only). Checked mechanically:
+   only the 9 ratio values left the file.
+3. **Finding F5 + exploratory dev evaluation** (`scripts/witness_window_dev.py` → `results/reports/witness_window_dev.md`,
+   one experiments row labelled EXPLORATORY; `a276eed`). See F5 below.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
@@ -2715,6 +2736,16 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
 - **F4 — Misses dominate the cost.** 11 / 24 test misses each cost a full 16.7 h review; the median depends on the
   13th hit. A product needs a stated fallback for "not in the list" (e.g. witness window, motion ranking), and the
   coverage line must never imply absence.
+
+- **F5 — The witness baseline is strong because knowing the time narrows the search; Rewind + a witness window was
+  not evaluated on test (27 Oct).** On test the perfect-witness baseline (±10 min first) has median 2,977 s and mean
+  2,927 s, and beats Rewind's mean (28,277 s) because Rewind's misses cost a full review. **Exploratory, dev only, decides
+  nothing (n = 12):** Rewind searched only inside the ±10 min window (all cameras), falling back to the witness review on
+  a miss: median 377 s [99, 708], mean 713 s, 11/12 found in the window list; vs witness alone: faster on 11/12, median
+  paired saving +2,359 s [+1,792, +3,289]; vs Rewind on all footage (401 s median, 3,668 s mean, 9/12): faster on 10/12.
+  The two IR misses on dev (s05 found at rank 54 inside the window; s09 still missed). Uses the true event middle (a
+  perfect witness), so it is an upper bound for a real, noisy witness estimate. Motivates the UI's optional time
+  window (Phase 9). A test claim would need a new pre-registered evaluation, which the single-run rule rules out here.
 
 ---
 
