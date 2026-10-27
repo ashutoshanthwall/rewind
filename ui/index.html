@@ -1,0 +1,402 @@
+<!doctype html>
+<!-- Rewind UI (step 9.1). One page, no build step, no external scripts or fonts: Rewind is an offline tool.
+     Talks to the FastAPI app that serves it (rewind/api/app.py): /footage, /search, /thumb, /proxy/{id}, /motion.
+     Times are camera wall-clock strings without a time zone; they are handled as UTC in JavaScript only so the
+     browser's own time zone never shifts them. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rewind</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --ink: #141413; --ink-2: #55544f; --ink-3: #8a8983; --line: #e2e1dc;
+    --accent: #2a78d6; --accent-ink: #ffffff; --accent-soft: #e3eefb; --warn-soft: #fff4e0; --warn-line: #e8b860;
+    --track: #ecebe6; --footage: #d5d4cd; --hit: #2a78d6; --hit-top: #eb6834; --ir: #6250d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --ink: #f0efec; --ink-2: #c3c2b7; --ink-3: #8f8e86; --line: #34332f;
+      --accent: #3987e5; --accent-ink: #ffffff; --accent-soft: #1d2d42; --warn-soft: #33281a; --warn-line: #9a7434;
+      --track: #2a2a27; --footage: #45443f; --hit: #3987e5; --hit-top: #d95926; --ir: #9085e9;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 18px 24px 10px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  header p { margin: 0; color: var(--ink-2); }
+  main { max-width: 1280px; margin: 0 auto; padding: 0 24px 40px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  label.big { display: block; font-weight: 600; margin-bottom: 6px; }
+  textarea { width: 100%; min-height: 54px; resize: vertical; font: inherit; padding: 10px 12px; border-radius: 8px;
+             border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { font-size: 13px; color: var(--ink-2); }
+  input, select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .hint { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+  button { font: inherit; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+           padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 8px 18px; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .marker:focus-visible, .card:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; user-select: none; }
+  .chip input { margin: 0; }
+  .badge { font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 5px; border: 1px solid var(--ink-3); color: var(--ink-2); }
+  .badge.ir { border-color: var(--ir); color: var(--ir); }
+  .coverage { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .coverage strong { font-size: 16px; }
+  .note { color: var(--ink-2); font-size: 13px; }
+  .error { background: var(--warn-soft); border-color: var(--warn-line); }
+  /* timeline */
+  .day { margin-top: 10px; }
+  .day h3 { font-size: 13px; margin: 0 0 4px; color: var(--ink-2); font-weight: 600; }
+  .tl-row { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; height: 22px; }
+  .tl-row .cam { font-size: 12px; color: var(--ink-2); display: flex; gap: 4px; align-items: center; }
+  .track { position: relative; height: 14px; background: var(--track); border-radius: 3px; }
+  .footage { position: absolute; top: 0; bottom: 0; background: var(--footage); border-radius: 3px; }
+  .marker { position: absolute; top: -3px; bottom: -3px; min-width: 4px; background: var(--hit); border-radius: 2px; cursor: pointer; border: 1px solid var(--panel); }
+  .marker.top { background: var(--hit-top); }
+  .marker.sel { outline: 2px solid var(--ink); }
+  .axis { position: relative; height: 16px; margin-left: 78px; font-size: 11px; color: var(--ink-3); }
+  .axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  /* player */
+  #player { display: none; }
+  #player video { width: 100%; max-height: 60vh; background: #000; border-radius: 8px; }
+  .player-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  /* cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
+  .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .card img { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; display: block; }
+  .card .body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .card .top { display: flex; gap: 6px; align-items: center; font-weight: 600; font-size: 14px; }
+  .rank { color: var(--ink-3); font-weight: 600; }
+  .bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); border-radius: 3px; }
+  .muted { color: var(--ink-2); }
+  /* fallback */
+  .fallback { background: var(--warn-soft); border-color: var(--warn-line); }
+  .fallback h2 { margin: 0 0 6px; font-size: 17px; }
+  .fallback .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  table.motion { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  table.motion td, table.motion th { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+  table.motion tr.play { cursor: pointer; }
+  table.motion tr.play:hover { background: var(--panel); }
+  .act { display: inline-block; height: 6px; background: var(--ink-3); border-radius: 3px; vertical-align: middle; }
+  h2.section { font-size: 15px; margin: 18px 0 8px; }
+  @media (max-width: 640px) { main, header { padding-left: 16px; padding-right: 16px; } .tl-row { grid-template-columns: 54px 1fr; } .axis { margin-left: 62px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Rewind</h1>
+  <p>Describe what you saw, get the clip.</p>
+</header>
+<main>
+  <form class="panel" id="form" autocomplete="off">
+    <label class="big" for="q">What did you see?</label>
+    <textarea id="q" required placeholder="e.g. a person in a dark jacket carries a box toward the building"></textarea>
+    <div class="row">
+      <div class="field">
+        <span>Around when? (optional)</span>
+        <input type="datetime-local" id="when" step="60">
+      </div>
+      <div class="field">
+        <span>± window</span>
+        <select id="win"></select>
+      </div>
+      <button type="button" id="clearWhen">Clear time</button>
+      <div class="field" style="flex: 1; min-width: 260px;">
+        <span>Cameras</span>
+        <div class="chips" id="cams"></div>
+      </div>
+      <button class="primary" type="submit" id="go">Search</button>
+    </div>
+    <div class="hint" id="hint">If anyone remembers roughly when, add the time: a window narrows the search. Without it, all indexed footage is searched.</div>
+  </form>
+
+  <div id="status"></div>
+  <section id="results"></section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const S = { footage: null, sel: null, data: null, k: null, selected: null, clipEnd: null, playOn: false };
+
+// ---- time helpers: camera wall-clock strings, handled as UTC so the browser time zone never shifts them ----
+const ms = (iso) => Date.parse(iso.length === 16 ? iso + ":00Z" : iso.replace(/(\.\d+)?$/, "") + "Z");
+const iso = (t) => new Date(t).toISOString().slice(0, 19);
+const hms = (t) => new Date(t).toISOString().slice(11, 19);
+const hm = (t) => new Date(t).toISOString().slice(11, 16);
+const day = (t) => new Date(t).toISOString().slice(0, 10);
+const dayLabel = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const dur = (s) => s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function api(path) {
+  const r = await fetch(path);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : `HTTP ${r.status}`);
+  return body;
+}
+
+// ---- start-up: cameras, footage extent, window choices ----
+async function init() {
+  try {
+    S.footage = await api("/footage");
+  } catch (e) {
+    $("status").innerHTML = `<div class="panel error">Could not reach the Rewind API: ${esc(e.message)}</div>`;
+    return;
+  }
+  const f = S.footage;
+  S.k = f.ui.default_clips;
+  $("cams").innerHTML = f.cameras.map((c) => `
+    <label class="chip" title="${c.hours} h indexed">
+      <input type="checkbox" value="${esc(c.camera)}" checked> ${esc(c.camera)}
+      ${c.modality === "ir" ? '<span class="badge ir" title="thermal infrared">IR</span>' : ""}
+    </label>`).join("");
+  $("win").innerHTML = f.ui.window_minutes.map((m) => `<option value="${m}" ${m === f.ui.default_window_minutes ? "selected" : ""}>± ${m} min</option>`).join("");
+  $("when").min = f.start.slice(0, 16);
+  $("when").max = f.end.slice(0, 16);
+  const days = [...new Set(f.cameras.flatMap((c) => c.spans.map((s) => s[0].slice(0, 10))))].sort();
+  $("hint").textContent += ` Footage: ${days.map(dayLabel).join(", ")}.`;
+  // a search can be shared as a link: ?q=...&when=2018-03-15T15:33&win=10&cams=G336,G474
+  const u = new URLSearchParams(location.search);
+  if (u.get("when")) $("when").value = u.get("when");
+  if (u.get("win")) $("win").value = u.get("win");
+  if (u.get("cams")) { const want = u.get("cams").split(","); document.querySelectorAll("#cams input").forEach((i) => { i.checked = want.includes(i.value); }); }
+  if (u.get("q")) { $("q").value = u.get("q"); search(selection()); }
+}
+
+function selection() {
+  const cams = [...document.querySelectorAll("#cams input:checked")].map((i) => i.value);
+  const all = cams.length === S.footage.cameras.length;
+  const when = $("when").value, win = +$("win").value;
+  const t0 = when ? ms(when) - win * 60000 : null, t1 = when ? ms(when) + win * 60000 : null;
+  return { q: $("q").value.trim(), cams, all, when, win, t0, t1 };
+}
+
+function params(sel, extra = {}) {
+  const p = new URLSearchParams({ ...extra });
+  if (!sel.all) p.set("cameras", sel.cams.join(","));
+  if (sel.t0 !== null) { p.set("start", iso(sel.t0)); p.set("end", iso(sel.t1)); }
+  return p;
+}
+
+async function search(sel) {
+  if (!sel.q) return;
+  if (!sel.cams.length) { $("status").innerHTML = '<div class="panel error">Select at least one camera.</div>'; return; }
+  S.sel = sel;
+  const link = new URLSearchParams({ q: sel.q });
+  if (sel.when) { link.set("when", sel.when); link.set("win", sel.win); }
+  if (!sel.all) link.set("cams", sel.cams.join(","));
+  history.replaceState(null, "", "?" + link);
+  $("go").disabled = true;
+  $("status").innerHTML = '<div class="panel note">Searching…</div>';
+  try {
+    S.data = await api("/search?" + params(sel, { q: sel.q, k: S.k }));
+    $("status").innerHTML = "";
+    render();
+  } catch (e) {
+    $("status").innerHTML = `<div class="panel error">Search failed: ${esc(e.message)}</div>`;
+  } finally {
+    $("go").disabled = false;
+  }
+}
+
+// ---- results ----
+function coverageHtml(cov, sel) {
+  const where = sel.all ? "all cameras" : sel.cams.join(", ");
+  const when = sel.t0 === null ? "all indexed time" : `${dayLabel(day(sel.t0))}, ${hm(sel.t0)}–${hm(sel.t1)} (${sel.when.slice(11)} ± ${sel.win} min)`;
+  return `<div class="panel">
+    <div class="coverage"><strong>${esc(cov.line)}</strong>
+      <span class="muted">${esc(where)} · ${esc(when)} · matched with: ${esc(cov.branches.join(", "))}</span></div>
+    <div class="note">${esc(S.data.note)}</div></div>`;
+}
+
+function render() {
+  const d = S.data, sel = S.sel, clips = d.clips;
+  let h = coverageHtml(d.coverage, sel);
+  if (!clips.length) {
+    h += fallbackHtml(true);
+    $("results").innerHTML = h;
+    bindFallback();
+    return;
+  }
+  h += `<div class="panel" id="player"><video id="video" controls preload="metadata"></video>
+          <div class="player-bar"><strong id="cap"></strong>
+            <button type="button" id="replay">Replay clip</button>
+            <button type="button" id="playon">Keep playing past the clip</button></div></div>`;
+  h += `<div class="panel"><h2 class="section" style="margin-top:0">Where the candidates are</h2>${timelineHtml(clips, sel)}</div>`;
+  h += `<h2 class="section">${clips.length} candidate clips, best first</h2><div class="grid">${clips.map(cardHtml).join("")}</div>`;
+  if (clips.length >= S.k && S.k < S.footage.ui.max_clips) h += `<p><button type="button" id="more">Show more candidates</button></p>`;
+  h += fallbackHtml(false);
+  $("results").innerHTML = h;
+  document.querySelectorAll("[data-rank]").forEach((el) => {
+    el.addEventListener("click", () => pick(+el.dataset.rank));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(+el.dataset.rank); } });
+  });
+  if ($("more")) $("more").onclick = () => { S.k = Math.min(S.footage.ui.max_clips, S.k + S.footage.ui.default_clips); search(S.sel); };
+  $("replay").onclick = () => replay();
+  $("playon").onclick = () => { S.playOn = true; $("video").play(); };
+  $("video").addEventListener("timeupdate", () => {
+    const v = $("video");
+    if (!S.playOn && S.clipEnd !== null && v.currentTime >= S.clipEnd) v.pause();
+  });
+  bindFallback();
+}
+
+function cardHtml(c) {
+  const t0 = ms(c.wall_start), t1 = ms(c.wall_end);
+  const a = c.best.appearance;
+  const box = a && a.type === "crop" && a.x1 !== null ? `&box=${[a.x1, a.y1, a.x2, a.y2].map((x) => Math.round(x)).join(",")}` : "";
+  const t = a ? a.t_s : (c.start_s + c.end_s) / 2;
+  const what = !a ? "" : a.type === "crop" ? `${a.crop_source || ""} crop${a.class ? " · " + a.class : ""} (box)` : "whole frame";
+  const sc = S.data.clips.map((k) => k.score), hi = Math.max(...sc), lo = Math.min(...sc);
+  const rel = hi > lo ? Math.max(0.04, (c.score - lo) / (hi - lo)) : 1;     // position within this list, not a probability
+  return `<div class="card" tabindex="0" data-rank="${c.rank}" id="card-${c.rank}">
+    <img loading="lazy" alt="Frame from ${esc(c.camera)} at ${hms(t0)}" src="/thumb?video_id=${c.video_id}&t=${t.toFixed(1)}${box}">
+    <div class="body">
+      <div class="top"><span class="rank">#${c.rank}</span> ${esc(c.camera)}
+        ${c.modality === "ir" ? '<span class="badge ir">IR</span>' : '<span class="badge">RGB</span>'}</div>
+      <div>${dayLabel(day(t0))} · ${hms(t0)}–${hms(t1)} <span class="muted">(${dur((t1 - t0) / 1000)})</span></div>
+      <div class="bar" title="Similarity, scaled from the lowest to the highest candidate in this list (fused score ${c.score})"><div style="width:${(rel * 100).toFixed(0)}%"></div></div>
+      <div class="muted">Matched by: ${esc(c.matched_by.join(", "))}${what ? " — " + esc(what) : ""}</div>
+    </div></div>`;
+}
+
+function timelineHtml(clips, sel) {
+  const cams = S.footage.cameras.filter((c) => sel.cams.includes(c.camera));
+  const spans = cams.flatMap((c) => c.spans.map(([a, b]) => ({ cam: c.camera, a: ms(a), b: ms(b) })))
+    .map((s) => sel.t0 === null ? s : { ...s, a: Math.max(s.a, sel.t0), b: Math.min(s.b, sel.t1) })
+    .filter((s) => s.b > s.a);
+  const days = [...new Set(spans.map((s) => day(s.a)))].sort();
+  if (!days.length) return '<div class="note">No indexed footage in this selection.</div>';
+  let h = "";
+  for (const d of days) {
+    const ds = spans.filter((s) => day(s.a) === d);
+    const lo = Math.min(...ds.map((s) => s.a)), hi = Math.max(...ds.map((s) => s.b)), span = hi - lo || 1;
+    const x = (t) => (100 * (t - lo) / span).toFixed(3);
+    const dayClips = clips.filter((c) => day(ms(c.wall_start)) === d);
+    h += `<div class="day"><h3>${dayLabel(d)} · ${hm(lo)}–${hm(hi)} · ${dayClips.length} candidate${dayClips.length === 1 ? "" : "s"}</h3>`;
+    for (const c of cams) {
+      const fs = ds.filter((s) => s.cam === c.camera);
+      h += `<div class="tl-row"><div class="cam">${esc(c.camera)}${c.modality === "ir" ? ' <span class="badge ir">IR</span>' : ""}</div><div class="track">`;
+      h += fs.map((s) => `<div class="footage" style="left:${x(s.a)}%;width:${(x(s.b) - x(s.a)).toFixed(3)}%"></div>`).join("");
+      h += dayClips.filter((k) => k.camera === c.camera).map((k) => {
+        const a = ms(k.wall_start), b = ms(k.wall_end);
+        return `<div class="marker ${k.rank <= 3 ? "top" : ""}" tabindex="0" role="button" data-rank="${k.rank}" id="mk-${k.rank}"
+                  title="#${k.rank} ${esc(k.camera)} ${hms(a)}–${hms(b)}" style="left:${x(a)}%;width:${Math.max(0, x(b) - x(a)).toFixed(3)}%"></div>`;
+      }).join("");
+      h += `</div></div>`;
+    }
+    const step = [5, 10, 15, 30, 60, 120, 240].map((m) => m * 60000).find((s) => span / s <= 8) || 480 * 60000;
+    let ticks = "";
+    for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) ticks += `<span style="left:${x(t)}%">${hm(t)}</span>`;
+    h += `<div class="axis">${ticks}</div></div>`;
+  }
+  h += `<div class="legend"><span><span class="sw" style="background:var(--footage)"></span>indexed footage</span>
+        <span><span class="sw" style="background:var(--hit-top)"></span>top 3 candidates</span>
+        <span><span class="sw" style="background:var(--hit)"></span>other candidates</span></div>`;
+  return h;
+}
+
+function pick(rank) {
+  const c = S.data.clips.find((k) => k.rank === rank);
+  if (!c) return;
+  document.querySelectorAll(".card.sel, .marker.sel").forEach((el) => el.classList.remove("sel"));
+  $("card-" + rank)?.classList.add("sel");
+  $("mk-" + rank)?.classList.add("sel");
+  play(c.video_id, c.start_s, c.end_s, `#${c.rank} · ${c.camera} · ${dayLabel(day(ms(c.wall_start)))} ${hms(ms(c.wall_start))}–${hms(ms(c.wall_end))}`);
+}
+
+function play(videoId, start, end, caption) {
+  const p = $("player"), v = $("video");
+  p.style.display = "block";
+  $("cap").textContent = caption;
+  S.selected = { videoId, start, end };
+  S.clipEnd = end;
+  S.playOn = false;
+  const src = `/proxy/${videoId}`;
+  const go = () => { v.currentTime = start; v.play().catch(() => {}); };
+  if (v.getAttribute("src") !== src) { v.setAttribute("src", src); v.addEventListener("loadedmetadata", go, { once: true }); v.load(); }
+  else go();
+  p.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function replay() { if (S.selected) { S.playOn = false; $("video").currentTime = S.selected.start; $("video").play(); } }
+
+// ---- fallback: never a bare "no results"; always a next step ----
+function fallbackHtml(empty) {
+  const sel = S.sel, opts = S.footage.ui.window_minutes, next = opts.find((m) => m > sel.win);
+  const zero = S.data.coverage.hours === 0;
+  let h = `<div class="panel fallback" id="fallback">
+    <h2>${empty ? "No candidate clips in this selection" : "Not in the list?"}</h2>
+    <div>${zero ? "There is no indexed footage for these cameras and times. " : ""}Rewind ranks clips by similarity to the description. It can miss events, especially small or distant ones, thermal (IR) views and very brief actions. <strong>A missing or wrong result never means the event did not happen.</strong></div>
+    <div class="actions">`;
+  if (sel.t0 !== null && next) h += `<button type="button" data-act="widen">Widen to ± ${next} min</button>`;
+  if (sel.t0 !== null) h += `<button type="button" data-act="notime">Search all times</button>`;
+  else h += `<button type="button" data-act="addtime">Add an approximate time</button>`;
+  if (!sel.all) h += `<button type="button" data-act="allcams">Search all cameras</button>`;
+  if (!zero) h += `<button type="button" data-act="motion">Review by motion in this selection</button>`;
+  h += `</div><div id="motion"></div></div>`;
+  return h;
+}
+
+function bindFallback() {
+  document.querySelectorAll("#fallback [data-act]").forEach((b) => b.addEventListener("click", () => {
+    const act = b.dataset.act;
+    if (act === "widen") { const opts = S.footage.ui.window_minutes; $("win").value = opts.find((m) => m > S.sel.win); search(selection()); }
+    if (act === "notime") { $("when").value = ""; search(selection()); }
+    if (act === "addtime") { $("when").focus(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+    if (act === "allcams") { document.querySelectorAll("#cams input").forEach((i) => { i.checked = true; }); search(selection()); }
+    if (act === "motion") motionList();
+  }));
+}
+
+async function motionList() {
+  $("motion").innerHTML = '<div class="note">Loading…</div>';
+  try {
+    const m = await api("/motion?" + params(S.sel));
+    const top = Math.max(...m.segments.map((s) => s.activity), 1e-9);
+    S.motion = m.segments;
+    $("motion").innerHTML = `<div class="note" style="margin-top:10px">${esc(m.note)} Showing ${m.segments.length} of ${m.of} one-minute segments.</div>
+      <table class="motion"><thead><tr><th>#</th><th>Camera</th><th>When</th><th>Movement</th></tr></thead><tbody>
+      ${m.segments.map((s, i) => `<tr class="play" tabindex="0" data-i="${i}"><td>${i + 1}</td>
+        <td>${esc(s.camera)} ${s.modality === "ir" ? '<span class="badge ir">IR</span>' : ""}</td>
+        <td>${dayLabel(day(ms(s.wall_start)))} ${hms(ms(s.wall_start))}–${hms(ms(s.wall_end))}</td>
+        <td><span class="act" style="width:${(100 * s.activity / top).toFixed(0)}px"></span></td></tr>`).join("")}
+      </tbody></table>`;
+    document.querySelectorAll("#motion tr.play").forEach((tr) => {
+      const go = () => {
+        const s = S.motion[+tr.dataset.i];
+        if (!$("player")) {               // no player yet (empty result): add one above the fallback
+          $("fallback").insertAdjacentHTML("beforebegin", `<div class="panel" id="player"><video id="video" controls preload="metadata"></video>
+            <div class="player-bar"><strong id="cap"></strong><button type="button" id="replay">Replay</button></div></div>`);
+          $("replay").onclick = () => replay();
+          $("video").addEventListener("timeupdate", () => { if (!S.playOn && S.clipEnd !== null && $("video").currentTime >= S.clipEnd) $("video").pause(); });
+        }
+        play(s.video_id, s.start_s, s.end_s, `Motion segment · ${s.camera} · ${hms(ms(s.wall_start))}–${hms(ms(s.wall_end))}`);
+      };
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    });
+  } catch (e) {
+    $("motion").innerHTML = `<div class="note">Could not load the motion list: ${esc(e.message)}</div>`;
+  }
+}
+
+$("form").addEventListener("submit", (e) => { e.preventDefault(); S.k = S.footage.ui.default_clips; search(selection()); });
+$("clearWhen").onclick = () => { $("when").value = ""; };
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); } });
+init();
+</script>
+</body>
+</html>

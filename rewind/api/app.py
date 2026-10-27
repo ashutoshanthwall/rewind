@@ -13,6 +13,13 @@ GET /search?q=...&cameras=G330,G336&start=2018-03-07T10:00:00&end=2018-03-07T11:
   selection, and timings. No clip is an event claim: the response says "candidate clips; people judge them".
 GET /coverage?cameras=...&start=...&end=...  hours of indexed footage in the selection, per camera.
   Every /search response carries the same coverage, so an empty result is never a bare "no results".
+Step 9.1 (the UI, ui/index.html, served at GET /):
+GET /footage   cameras (modality, hours, continuous spans) and the UI settings (config section `ui`).
+GET /motion?cameras=...&start=...&end=...&k=...  the fallback when the event is not in the list: segments of the
+  selection ranked by mean MOG2 activity (the step 3.2 motion baseline, same code), most movement first.
+GET /thumb?video_id=...&t=...&box=x1,y1,x2,y2  JPEG of the proxy frame at t seconds (box in original pixels, drawn
+  scaled to the proxy). Decoded on request and cached in memory only: no frame is written to disk.
+GET /proxy/{video_id}  the playback copy (MP4, faststart; byte ranges for seeking). Originals are never served.
 
 Threads: FastAPI runs these sync endpoints in a thread pool. Engine indexes have their own locks (C++); the GPU text
 encoders are used under one lock here.
@@ -24,14 +31,19 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 
+import av
+import cv2
 import numpy as np
 import yaml
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 
 from rewind.embed.clip_model import Clip
 from rewind.embed.languagebind import LanguageBind
+from rewind.eval.baselines import motion_ranked, motion_scores, segments
 from rewind.ingest.manifest import connect, load_videos
 from rewind.paths import REPO_ROOT
 from rewind.search.core import SearchConfig
@@ -41,6 +53,7 @@ from rewind.search.fusion import check_weights, fuse
 HIT_FIELDS = {"appearance": ["t_s", "score", "z", "type", "view", "crop_source", "class", "x1", "y1", "x2", "y2"],
               "action": ["t_s", "window_start", "score", "z"]}
 NOTE = "Candidate clips ranked by similarity to the description; people judge them. Similarity is not proof."
+UI_DIR = REPO_ROOT / "ui"
 
 
 def parse_time(s: str | None, name: str) -> datetime | None:
@@ -59,6 +72,44 @@ def overlap_s(a0: datetime, a1: datetime, b0: datetime | None, b1: datetime | No
     lo = a0 if b0 is None else max(a0, b0)
     hi = a1 if b1 is None else min(a1, b1)
     return max(0.0, (hi - lo).total_seconds())
+
+
+def merged_spans(videos, join_gap_s: float) -> dict[str, list[list[datetime]]]:
+    """camera -> continuous footage spans [start, end): videos of a camera within join_gap_s of each other merge."""
+    out: dict[str, list[list[datetime]]] = {}
+    for v in sorted(videos, key=lambda v: (v.camera_id, v.start_time)):
+        rs = out.setdefault(v.camera_id, [])
+        if rs and v.start_time <= rs[-1][1] + timedelta(seconds=join_gap_s):
+            rs[-1][1] = max(rs[-1][1], v.end_time)
+        else:
+            rs.append([v.start_time, v.end_time])
+    return out
+
+
+def frame_at(path: Path, t: float) -> np.ndarray:
+    """BGR frame of a proxy at t seconds: seek to the keyframe at or before t, decode forward to the first frame whose
+    time reaches t (within half a frame). Raises if the clip ends first."""
+    with av.open(str(path)) as c:
+        st = c.streams.video[0]
+        c.seek(int(t / st.time_base) + (st.start_time or 0), stream=st, backward=True)
+        half = 0.5 / float(st.average_rate)
+        for fr in c.decode(st):
+            if fr.time is not None and fr.time >= t - half:
+                return fr.to_ndarray(format="bgr24")
+    raise ValueError(f"{path.name}: no frame at {t:.2f} s")
+
+
+def draw_thumb(img: np.ndarray, box: tuple | None, scale: float, width: int) -> bytes:
+    """Draw box (original pixels; scale = proxy width / original width) and resize to width; JPEG bytes."""
+    if box is not None:
+        x1, y1, x2, y2 = (int(round(c * scale)) for c in box)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 0), 5)          # dark outline, then a bright box: visible
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 210, 255), 3)      # on light and dark footage (IR included)
+    h = int(round(img.shape[0] * width / img.shape[1]))
+    ok, buf = cv2.imencode(".jpg", cv2.resize(img, (width, h), interpolation=cv2.INTER_AREA))
+    if not ok:
+        raise RuntimeError("JPEG encoding failed")
+    return buf.tobytes()
 
 
 def clean(v):
@@ -86,7 +137,14 @@ class Rewind:
         self.videos = {v.video_id: v for v in load_videos(conn)}
         self.durations = {vid: v.n_frames / v.fps for vid, v in self.videos.items()}
         self.proxies = {r[0]: r[1] for r in conn.execute("SELECT video_id, path FROM proxies")}
+        self.frame_w = dict(conn.execute("SELECT video_id, width FROM videos").fetchall())
         conn.close()
+        self.ui = self.cfg["ui"]
+        self.join_s = self.cfg["ingest"]["max_name_duration_diff_s"]
+        seg_s = self.cfg["baselines"]["segment_s"]
+        self.motion = motion_scores(list(self.videos.values()), seg_s, REPO_ROOT / "artifacts")
+        self.seg_video = {seg: v.video_id for v in self.videos.values() for seg in segments([v], seg_s)}
+        self.thumb = lru_cache(maxsize=self.ui["thumb_cache"])(self._thumb)
         self.cameras = sorted({v.camera_id for v in self.videos.values()})
         self.modality = {v.camera_id: v.modality for v in self.videos.values()}
         t = time.perf_counter()
@@ -124,6 +182,38 @@ class Rewind:
                 "line": f"Searched {hours:.1f} h of footage across {len(with_footage)} camera"
                         f"{'s' if len(with_footage) != 1 else ''}."}
 
+    def footage(self) -> dict:
+        spans = merged_spans(self.videos.values(), self.join_s)
+        cams = [{"camera": c, "modality": self.modality[c],
+                 "hours": round(sum((b - a).total_seconds() for a, b in spans[c]) / 3600, 2),
+                 "spans": [[a.isoformat(), b.isoformat()] for a, b in spans[c]]} for c in self.cameras]
+        return {"cameras": cams, "start": min(v.start_time for v in self.videos.values()).isoformat(),
+                "end": max(v.end_time for v in self.videos.values()).isoformat(),
+                "ui": {**{k: self.ui[k] for k in ("window_minutes", "default_window_minutes")},
+                       "default_clips": self.default_clips, "max_clips": self.max_clips},
+                "branches": [b for b in self.branches if self.weights[b] > 0], "note": NOTE}
+
+    def motion_list(self, cams: list[str], t0: datetime | None, t1: datetime | None, k: int) -> dict:
+        """Fallback review list: the selection's segments by mean motion activity (step 3.2 baseline order)."""
+        sel = {s: a for s, a in self.motion.items()
+               if s.camera_id in cams and (t0 is None or (s.start < t1 and t0 < s.end))}
+        out = []
+        for s in motion_ranked(sel)[:k]:
+            v = self.videos[self.seg_video[s]]
+            out.append({"camera": s.camera_id, "modality": v.modality, "video_id": v.video_id,
+                        "proxy": self.proxies.get(v.video_id),
+                        "start_s": round((s.start - v.start_time).total_seconds(), 2),
+                        "end_s": round((s.end - v.start_time).total_seconds(), 2),
+                        "wall_start": s.start.isoformat(), "wall_end": s.end.isoformat(),
+                        "activity": round(float(sel[s]), 5)})
+        return {"segments": out, "of": len(sel), "coverage": self.coverage(cams, t0, t1),
+                "note": "Segments with the most movement first (the motion-search baseline): a manual review aid, "
+                        "not a match to the description."}
+
+    def _thumb(self, video_id: int, t: float, box: tuple | None) -> bytes:
+        img = frame_at(REPO_ROOT / self.proxies[video_id], t)
+        return draw_thumb(img, box, img.shape[1] / self.frame_w[video_id], self.ui["thumb_width"])
+
     def search(self, q: str, cams: list[str], t0: datetime | None, t1: datetime | None, k: int) -> dict:
         t_start = time.perf_counter()
         text = " ".join(q.split())
@@ -156,8 +246,9 @@ class Rewind:
 
 
 def create_app(config_path: Path = REPO_ROOT / "configs" / "config.yaml",
-               db_path: Path = REPO_ROOT / "data" / "rewind.sqlite") -> FastAPI:
-    rw = Rewind(config_path, db_path)
+               db_path: Path = REPO_ROOT / "data" / "rewind.sqlite", rw: "Rewind | None" = None) -> FastAPI:
+    """rw: an already built Rewind (tests pass one without models); default: built from config_path and db_path."""
+    rw = Rewind(config_path, db_path) if rw is None else rw
     app = FastAPI(title="Rewind", description="Describe what you saw, get the clip.")
     app.state.rewind = rw
 
@@ -173,6 +264,49 @@ def create_app(config_path: Path = REPO_ROOT / "configs" / "config.yaml",
     @app.get("/coverage")
     def coverage(cameras: str | None = None, start: str | None = None, end: str | None = None):
         return rw.coverage(*rw.selection(cameras, start, end))
+
+    @app.get("/", include_in_schema=False)
+    def index():
+        return FileResponse(UI_DIR / "index.html", media_type="text/html")
+
+    @app.get("/footage")
+    def footage():
+        return rw.footage()
+
+    @app.get("/motion")
+    def motion(cameras: str | None = None, start: str | None = None, end: str | None = None,
+               k: int | None = Query(None, ge=1)):
+        k = rw.ui["fallback_motion_k"] if k is None else k
+        if k > rw.max_clips:
+            raise HTTPException(400, f"k must be <= {rw.max_clips}")
+        return rw.motion_list(*rw.selection(cameras, start, end), k)
+
+    def video(video_id: int):
+        v = rw.videos.get(video_id)
+        if v is None or video_id not in rw.proxies:
+            raise HTTPException(404, f"no video / proxy {video_id}")
+        return v
+
+    @app.get("/thumb")
+    def thumb(video_id: int, t: float, box: str | None = None):
+        v = video(video_id)
+        if not 0 <= t <= v.n_frames / v.fps:
+            raise HTTPException(400, f"t must be within 0..{v.n_frames / v.fps:.2f} s")
+        b = None
+        if box:
+            try:
+                b = tuple(float(x) for x in box.split(","))
+            except ValueError:
+                raise HTTPException(400, "box: four numbers x1,y1,x2,y2")
+            if len(b) != 4:
+                raise HTTPException(400, "box: four numbers x1,y1,x2,y2")
+        return Response(rw.thumb(video_id, round(t, 1), b), media_type="image/jpeg",
+                        headers={"Cache-Control": "max-age=3600"})
+
+    @app.get("/proxy/{video_id}")
+    def proxy(video_id: int):
+        video(video_id)
+        return FileResponse(REPO_ROOT / rw.proxies[video_id], media_type="video/mp4")
 
     return app
 

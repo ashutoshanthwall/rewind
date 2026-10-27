@@ -248,6 +248,15 @@ api:
   # step 7.3 (rewind/api/app.py)
   default_clips: 20                 # clips returned by /search when k is not given
   max_clips: 100                    # largest k a client may ask for
+ui:
+  # step 9.1 (ui/index.html, rewind/api/app.py). Added after the 8.1 freeze: presentation only, no search setting
+  # changes; the frozen search config is commit b7a0fbd (configs/FROZEN_CONFIG.sha256 records that file's hash)
+  thumb_width: 480                  # px, result thumbnails (decoded from the proxy on request, never written to disk)
+  thumb_cache: 256                  # thumbnails kept in memory
+  window_minutes: [5, 10, 30, 60]   # "around this time, ± minutes" choices; 10 = the witness baseline's window
+  default_window_minutes: 10
+  fallback_motion_k: 12             # motion-ranked segments offered when the event is not in the list (step 3.2
+                                    # baseline: segments of baselines.segment_s by mean MOG2 activity)
 benchmark:
   # step 7.2 (scripts/benchmark_engine.py): HNSW vs exact brute force; measurement settings, not search settings
   ef_sweep: [200, 300, 400, 600, 800]   # >= search.k_per_index

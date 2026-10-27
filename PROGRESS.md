@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → 8.2 test run DONE (median 1,173 s, 13/24 found) → 8.3 DONE → next: Phase 9 UI** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → 8.2 test run DONE (median 1,173 s, 13/24 found) → 8.3 DONE → 9.1 UI DONE → next: 10 packaging; sensitivity analysis waits for Ashutosh's proxy check** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2702,6 +2702,45 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
    only the 9 ratio values left the file.
 3. **Finding F5 + exploratory dev evaluation** (`scripts/witness_window_dev.py` → `results/reports/witness_window_dev.md`,
    one experiments row labelled EXPLORATORY; `a276eed`). See F5 below.
+
+## Step 9.1 — single-page UI (Tue 27 Oct, ~20:45–21:15)
+
+**Done**
+- `ui/index.html`: one page, no build step, **no external scripts or fonts** (offline tool). Search box; **optional
+  "around when ± window"** (choices `ui.window_minutes`, default ±10 min = the witness baseline's window; F5);
+  camera chips with IR badges; coverage line on every result ("Searched X h across Y cameras", cameras, window,
+  branch) + "similarity is not proof"; per-day, per-camera **timeline** (indexed footage bars + candidate markers, top 3
+  highlighted, click to play); result cards (proxy thumbnail with the matched box, camera, RGB/IR, wall-clock span,
+  duration, similarity bar scaled within the list, "matched by"); player that plays the clip span from the proxy and
+  pauses at its end ("keep playing" to continue); shareable links (`?q=&when=&win=&cams=`).
+- **Fallback, never a bare "no results":** a "Not in the list?" panel under every result list (and in place of the list
+  when it is empty) states that Rewind can miss small / distant / IR / brief events and that **a missing or wrong
+  result never means the event did not happen**, and offers next steps: widen the window, search all times, search
+  all cameras, and **review by motion** (the step 3.2 motion baseline over the same selection, most movement first,
+  playable). With no footage in the selection it says so (0.0 h).
+- API (`rewind/api/app.py`): `GET /` (the page), `/footage`, `/motion`, `/thumb` (proxy frame decoded on request,
+  seek + decode with PyAV, box drawn scaled to the proxy, in-memory LRU cache, nothing written to disk), `/proxy/{id}`
+  (byte ranges for seeking; originals never served). `motion_scores` moved from `scripts/run_baselines.py` to
+  `rewind/eval/baselines.py` (same code; baseline report regenerates identically). `create_app(rw=...)` for tests.
+- Config: new `ui:` section (thumb size/cache, window choices, fallback length). **This changes the hash of
+  `configs/config.yaml`; search settings are unchanged. The frozen config remains commit `b7a0fbd`
+  (`configs/FROZEN_CONFIG.sha256`); `scripts/test_run.py` now refuses to run, as intended (single run done).**
+- Tests: 396 pass (+5: merged spans, motion ranking/filter, box scaling, frame-at-time on a generated video, endpoints
+  incl. a real 206 byte-range response), hand-computed.
+
+**Checked end to end (viewed by Claude: 4 screenshots; clicks driven through headless Chrome's debugging pipe)**
+- Windowed search "a white bus parked by the walkway", 15 Mar 15:33 ± 10 min: 20 cards, top result the tes-s01 bus
+  (G436 15:33:32); search 25 ms server-side; thumbnail ~0.24 s.
+- Card click → `/proxy/270` plays from 205 s (clip start), card + timeline marker highlighted; pauses at 238.05 s (clip
+  end 238). Motion fallback: 12 of 78 segments, row click plays the segment. No-footage selection: 0.0 h + fallback
+  without the motion button. All-footage search: three day groups, days without candidates still shown (coverage).
+
+**Run:** `uv run uvicorn rewind.api.app:app --port 8000` → http://localhost:8000 (start-up ~10–15 s: indexes,
+encoders, motion scores). A server is running now from this session: PID in `results/logs/ui_server.pid`, log
+`results/logs/ui_server.log`.
+
+**Open issues / for Ashutosh (👤 9.1):** try ~10 of your own queries; note anything slow or confusing. Not tested:
+dark mode by eye, narrow phone widths, Firefox. Action-branch "matched by" is never shown (weight 0).
 
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 

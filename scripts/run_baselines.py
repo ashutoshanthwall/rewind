@@ -32,14 +32,13 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from rewind.eval.baselines import camera_orders, motion_ranked, segment_activity, segments, sequential, shuffled, witness
+from rewind.eval.baselines import camera_orders, motion_ranked, motion_scores, segments, sequential, shuffled, witness
 from rewind.eval.metrics import (Span, average_precision_at_k, bootstrap_ci, drop_dont_care, instance_recall_at_k,
                                  recall_at_k, seconds_watched)
 from rewind.eval.queries import load_queries
 from rewind.eval.splits import split_event_ids, split_video_ids
 from rewind.experiment_log import git_hash, log_experiment
 from rewind.ingest.manifest import load_videos
-from rewind.motion.store import load_activity
 from rewind.paths import display_path
 from scripts.select_footage import markdown_table
 
@@ -94,16 +93,6 @@ def category_metrics(lists: list[list[Span]], inst: list[Span], dont_care: list[
     out = {f"AP@{k}": mean(average_precision_at_k(r, inst, k) for r in lists) for k in ks}
     out |= {f"IR@{k}": mean(instance_recall_at_k(r, inst, k) for r in lists) for k in ks}  # instance recall
     return out
-
-
-def motion_scores(videos, segment_s: float, art: Path) -> dict[Span, float]:
-    """Mean activity of every segment of the split's clips (each clip's segments from its own per-second scores)."""
-    scores = {}
-    for v in videos:
-        activity = load_activity(art, v)
-        for seg in segments([v], segment_s):
-            scores[seg] = segment_activity(v, seg, activity)
-    return scores
 
 
 def run_split(conn, split: str, cfg: dict, art: Path) -> list[dict]:

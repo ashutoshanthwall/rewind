@@ -25,6 +25,7 @@ import numpy as np
 
 from rewind.eval.metrics import Span
 from rewind.ingest.manifest import Video
+from rewind.motion.store import load_activity
 
 
 def segments(videos: Sequence[Video], segment_s: float) -> list[Span]:
@@ -86,3 +87,13 @@ def segment_activity(v: Video, seg: Span, activity: Sequence[float]) -> float:
 def motion_ranked(scores: dict[Span, float]) -> list[Span]:
     """Segments by descending activity; ties by camera, then time."""
     return sorted(scores, key=lambda s: (-scores[s], s.camera_id, s.start))
+
+
+def motion_scores(videos, segment_s: float, art) -> dict[Span, float]:
+    """Mean activity of every segment of these clips (each clip's segments from its own per-second scores)."""
+    scores = {}
+    for v in videos:
+        activity = load_activity(art, v)
+        for seg in segments([v], segment_s):
+            scores[seg] = segment_activity(v, seg, activity)
+    return scores
