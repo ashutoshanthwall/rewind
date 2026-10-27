@@ -83,6 +83,7 @@ metrics:
   bootstrap_n: 2000
   bootstrap_seed: 23
   ci_level: 0.95
+  small_n: 5                     # step 8.1 / 8.2 breakdown cells with fewer queries are marked 'descriptive only'
   event_tolerance_s: 2.0         # detected vs annotated events: spans widened by this (clocks +/- 1 s each)
 baselines:
   # step 2.3 (rewind/eval/baselines.py, scripts/run_baselines.py)
@@ -226,8 +227,9 @@ search:
   k_per_index: 200
   ef_search: 800                    # must be >= k. Both branches. Ashutosh, 27 Oct (PROGRESS.md "decisions after Phase 7", 2): recall@200 ~0.99 vs 0.94 at 200 (step 7.2)
   fusion: zscore_weighted
-  weights: {appearance: 1.0, action: 2, events: 0}       # action: step 7.4 pre-registered rule on tuning (PROGRESS.md;
-                                                          # all R@10 tied at 0, median-seconds tie-break). events 0: dropped
+  weights: {appearance: 1.0, action: 0, events: 0}       # action: step 8.1 pre-registered paired rule on dev, weight 0
+                                                          # vs 2: 8/1/8 -> keep 0 (w2 better mean/median/hits; PROGRESS.md).
+                                                          # Weight 0 = the action branch is not searched. events 0: dropped
   merge_gap_s: 5
   max_clip_s: 60
   clip_rank: mean_top3
