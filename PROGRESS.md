@@ -2743,7 +2743,7 @@ Commits: `be0128a` ef 800 · `7b5a2cd`/`2eb0e81` consistency · `dde89b0` 8.1 pl
   nothing (n = 12):** Rewind searched only inside the ±10 min window (all cameras), falling back to the witness review on
   a miss: median 377 s [99, 708], mean 713 s, 11/12 found in the window list; vs witness alone: faster on 11/12, median
   paired saving +2,359 s [+1,792, +3,289]; vs Rewind on all footage (401 s median, 3,668 s mean, 9/12): faster on 10/12.
-  The two IR misses on dev (s05 found at rank 54 inside the window; s09 still missed). Uses the true event middle (a
+  Of the two IR misses on dev, s05 is found inside the window (rank 54); s09 is still missed. Uses the true event middle (a
   perfect witness), so it is an upper bound for a real, noisy witness estimate. Motivates the UI's optional time
   window (Phase 9). A test claim would need a new pre-registered evaluation, which the single-run rule rules out here.
 
