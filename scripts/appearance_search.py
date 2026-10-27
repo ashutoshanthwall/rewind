@@ -97,9 +97,17 @@ def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: Sear
                qtypes: tuple | None = None) -> list[dict]:
     """The frozen queries of a split (only these qtypes, if given), scored like the baselines. index: anything with
     footage_s and ranked(q, cfg, rgb_only, query=<query row>); clip: anything with encode_text()."""
+    return query_rows_from(load_queries(QUERIES_DIR, split), lambda t: category_truth(conn, split, t), index, clip,
+                           cfg, scfg, qtypes)
+
+
+def query_rows_from(queries: list[dict], truth, index, clip, cfg: dict, scfg: SearchConfig,
+                    qtypes: tuple | None = None) -> list[dict]:
+    """query_rows given the frozen queries and truth(activity_type) -> (instances, don't-care), read by the caller
+    through the guarded accessors (step 8.2 reads test itself)."""
     m = cfg["metrics"]
     out = []
-    for q in load_queries(QUERIES_DIR, split):
+    for q in queries:
         if qtypes is not None and q["qtype"] not in qtypes:
             continue
         base = {k: q[k] for k in ("query_id", "kind", "qtype", "specificity", "modality", "camera_id")}
@@ -112,7 +120,7 @@ def query_rows(conn, split: str, index: Index, clip: Clip, cfg: dict, scfg: Sear
                        | {"hit": rank is not None, "hit_rank": -1 if rank is None else rank + 1,
                           "n_clips": len(ranked)})
         else:
-            inst, dont_care = category_truth(conn, split, q["activity_type"])
+            inst, dont_care = truth(q["activity_type"])
             ranked = index.ranked(z, scfg, rgb_only=True, query=q)
             out.append(base | {"instances": len(inst)} | category_metrics([ranked], inst, dont_care, m["category_k"]))
     return out

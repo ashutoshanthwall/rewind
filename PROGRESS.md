@@ -2472,7 +2472,7 @@ measured numbers:
   vectors", not an exact point;
 - also: drop GoogleTest and cpp-httplib (Phase 7 summary, flag 4).
 
-## Phase 8 preparation — ef 800, API latency, consistency check (Tue 27 Oct, ~19:00–19:40)
+## Phase 8 preparation — ef 800, API latency, consistency check (Tue 27 Oct, 19:04–19:10, commits be0128a–dde89b0)
 
 **Done**
 - `search.ef_search: 800` (both branches; engine searches pass ef per call, so no index rebuild). Commit `be0128a`.
@@ -2517,7 +2517,7 @@ measured numbers:
 - dev-s11 is a hit (rank 81) although its best in-event vector ranks 488: a neighbouring frame's clip (±5 s
   context) overlaps the event. Hit = clip overlap, by design (CLAUDE.md 1.10).
 
-## Step 8.1 — operational plan, PRE-REGISTERED (Tue 27 Oct, ~19:45; committed before any 8.1 result)
+## Step 8.1 — operational plan, PRE-REGISTERED (Tue 27 Oct, committed 19:10 in dde89b0, before any 8.1 result)
 
 Nothing of 8.1 has been run. The two pre-registered comparisons (decision 3 above; "Step 8.1 ablation list") each
 say "at the config's other values". Read literally, that is the config committed when they were written:

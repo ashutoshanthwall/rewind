@@ -54,7 +54,6 @@ from scripts.select_footage import rows_table
 
 SPLIT = "dev"
 COMMITTED = {"frame_mode": "pad", "crop_source": "motion", "mean_center": False, "action_weight": 2}
-SMALL_N = 5          # cells with fewer queries are descriptive only (pre-registered)
 
 
 def variant_cfg(cfg: dict, crop_source: str, center: str) -> dict:
@@ -107,7 +106,7 @@ def cells(rows: list[dict], cfg: dict, ap_key: str) -> list[list]:
     for kind, name, g in groups:
         if not g:
             continue
-        note = "descriptive only" if len(g) < SMALL_N else ""
+        note = "descriptive only" if len(g) < m["small_n"] else ""
         if kind == "specific":
             secs, r10 = [r["seconds"] for r in g], [r["R@10"] for r in g]
             out.append([kind, name, len(g), sum(r["hit"] for r in g),
@@ -166,7 +165,7 @@ def main() -> None:
                        f"{'exact brute force' if exact else 'HNSW ef ' + str(cfg['search']['ef_search'])}")
         s = summarise(rows[name], cfg)
         print(f"{name}: median s {s['median_seconds']:.0f}, hits {sum(r['hit'] for r in rows[name] if r['kind'] == 'specific')}"
-              f"/12, R@10 {s['R@10']:.3f}, mAP@50 {s['mAP@50']:.3f}", flush=True)
+              f"/{s['n_specific']}, R@10 {s['R@10']:.3f}, m{ap_key} {s['m' + ap_key]:.3f}", flush=True)
         return rows[name]
 
     gate = lambda s, c: paired_decision(rows[s], rows[c], ap_key, m["bootstrap_n"], m["bootstrap_seed"], m["ci_level"])
@@ -223,12 +222,12 @@ def main() -> None:
         f"fusion -> clips (merge {scfg.merge_gap_s} s, cap {scfg.max_clip_s} s, mean top-3, ±{scfg.context_s} s). "
         f"Frame mode {a['frame_mode']}. Plan pre-registered in PROGRESS.md (commit dde89b0) before any 8.1 result.", "",
         "## Variants", "",
-        rows_table(["variant", "median s [95% CI]", "mean s", "hits", "R@1", "R@5", "R@10", "mAP@10", "mAP@50"],
+        rows_table(["variant", "median s [95% CI]", "mean s", "hits", *(f"R@{x}" for x in m["recall_k"]), *(f"mAP@{x}" for x in m["category_k"])],
                    [[k + (" **(final)**" if k == final else ""),
                      f"{summ[k]['median_seconds']:,.0f} [{summ[k]['median_seconds_ci_lo']:,.0f}, "
                      f"{summ[k]['median_seconds_ci_hi']:,.0f}]", f"{summ[k]['mean_seconds']:,.0f}",
                      f"{sum(r['hit'] for r in rows[k] if r['kind'] == 'specific')}/{summ[k]['n_specific']}",
-                     *(fmt(summ[k][f'R@{x}']) for x in m["recall_k"]), fmt(summ[k]["mAP@10"]), fmt(summ[k]["mAP@50"])]
+                     *(fmt(summ[k][f'R@{x}']) for x in m["recall_k"]), *(fmt(summ[k][f"mAP@{x}"]) for x in m["category_k"])]
                     for k in rows]), "",
         f"## Pre-registered comparisons (paired rule `rewind/eval/gate.py`; specific: seconds, category: {ap_key})", "",
         rows_table(["comparison", "simple", "complex", "W / T / L", "specific mean diff s [CI]",
@@ -248,10 +247,10 @@ def main() -> None:
     for k in rows:
         lines += [f"### {k}", "", rows_table(["kind", "group", "n", "hits", "median s [CI]", "R@10 [CI]",
                                               f"m{ap_key} [CI]", ""], cells(rows[k], cfg, ap_key)), ""]
-    lines += ["## Per query (specific: seconds / hit rank; category: AP@50)", "",
+    lines += [f"## Per query (specific: seconds / hit rank; category: {ap_key})", "",
               rows_table(["query", "kind", "qtype", "modality", *rows],
                          [[r["query_id"], r["kind"], r["qtype"], r["modality"],
-                           *(_cell(next(x for x in rows[k] if x["query_id"] == r["query_id"])) for k in rows)]
+                           *(_cell(next(x for x in rows[k] if x["query_id"] == r["query_id"]), ap_key) for k in rows)]
                           for r in rows["w0 raw"]]), ""]
     args.report.write_text("\n".join(lines))
     print("\n".join(lines[:40]))
@@ -259,10 +258,10 @@ def main() -> None:
     print(f"DECISION: A adopt w2 = {dec_a['adopt']}, B adopt camera_type = {dec_b['adopt']} -> {final}")
 
 
-def _cell(r: dict) -> str:
+def _cell(r: dict, ap_key: str) -> str:
     if r["kind"] == "specific":
         return f"{r['seconds']:.0f} / {r['hit_rank']}"
-    return f"{r['AP@50']:.3f}"
+    return f"{r[ap_key]:.3f}"
 
 
 if __name__ == "__main__":

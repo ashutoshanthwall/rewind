@@ -53,8 +53,13 @@ NOTES = {"sequential": "mean over all camera orders", "witness": "perfect witnes
 
 def category_truth(conn, split: str, activity_type: str) -> tuple[list[Span], list[Span]]:
     """(instances, don't-care spans) of one activity type in a split: Kitware activities, pieces joined by group."""
-    keep = set(split_event_ids(conn, split))
-    every = set(split_event_ids(conn, split, include_boundary=True))
+    return category_truth_ids(conn, split, activity_type, set(split_event_ids(conn, split)),
+                              set(split_event_ids(conn, split, include_boundary=True)))
+
+
+def category_truth_ids(conn, split: str, activity_type: str, keep: set, every: set) -> tuple[list[Span], list[Span]]:
+    """category_truth given the split's event ids (keep: not boundary-flagged; every: all), read by the caller
+    through the guarded accessors (step 8.2 reads test itself). split: name for messages."""
     groups: dict[int, list] = defaultdict(list)
     for r in conn.execute("SELECT event_id, group_id, camera_id, start_time, end_time FROM events "
                           "WHERE activity_type = ? AND label_source != 'contrib'", (activity_type,)):
@@ -102,9 +107,15 @@ def motion_scores(videos, segment_s: float, art: Path) -> dict[Span, float]:
 
 
 def run_split(conn, split: str, cfg: dict, art: Path) -> list[dict]:
-    m, b = cfg["metrics"], cfg["baselines"]
     ids = set(split_video_ids(conn, split))
-    videos = [v for v in load_videos(conn) if v.video_id in ids]
+    return run_videos(conn, split, [v for v in load_videos(conn) if v.video_id in ids], load_queries(QUERIES_DIR, split),
+                      lambda t: category_truth(conn, split, t), cfg, art)
+
+
+def run_videos(conn, split: str, videos: list, queries: list[dict], truth, cfg: dict, art: Path) -> list[dict]:
+    """run_split given the split's videos, frozen queries and truth(activity_type) -> (instances, don't-care), read
+    by the caller through the guarded accessors (step 8.2 reads test itself). split: name stored in the rows."""
+    m, b = cfg["metrics"], cfg["baselines"]
     segs = segments(videos, b["segment_s"])
     scores = motion_scores(videos, b["segment_s"], art)
     if set(scores) != set(segs):
@@ -116,7 +127,7 @@ def run_split(conn, split: str, cfg: dict, art: Path) -> list[dict]:
     motion_all = motion_ranked(scores)
     motion_rgb = [s for s in motion_all if s.camera_id in rgb_cams]
     rows = []
-    for q in load_queries(QUERIES_DIR, split):
+    for q in queries:
         base = {k: q[k] for k in ("query_id", "kind", "qtype", "specificity", "modality")} | {"split": split}
         reps = [shuffled(segs if q["kind"] == "specific" else rgb_segs, f"{b['random_seed']}-{q['query_id']}-{r}")
                 for r in range(b["random_repeats"])]
@@ -128,7 +139,7 @@ def run_split(conn, split: str, cfg: dict, art: Path) -> list[dict]:
             for system, ls in lists.items():
                 rows.append(base | {"system": system} | specific_metrics(ls, gt, footage_s, m["recall_k"]))
         else:
-            inst, dont_care = category_truth(conn, split, q["activity_type"])
+            inst, dont_care = truth(q["activity_type"])
             lists = {"sequential": [sequential(rgb_segs, o) for o in rgb_orders], "random": reps, "motion": [motion_rgb]}
             for system, ls in lists.items():
                 rows.append(base | {"system": system, "instances": len(inst)}

@@ -66,7 +66,8 @@ def test_load_queries_guards_test_split():
 # Step 8.2 adds its own script here, explicitly. Any other file must go through split_video_ids / split_event_ids /
 # load_queries without allow_test.
 TEST_ACCESS_ALLOWED = {"rewind/eval/splits.py", "rewind/eval/queries.py", "scripts/make_splits.py",
-                       "scripts/make_worksheets.py", "scripts/freeze_queries.py", "scripts/review_queries.py"}
+                       "scripts/make_worksheets.py", "scripts/freeze_queries.py", "scripts/review_queries.py",
+                       "scripts/test_run.py"}   # step 8.2: the single test run
 TEST_ACCESS = re.compile(
     r"allow_test=(?!False)"                                  # passing allow_test (anything but False)
     r"|queries_\{|queries_test|worksheet_\{|worksheet_test"  # opening query / worksheet files directly
