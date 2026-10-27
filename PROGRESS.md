@@ -1,6 +1,6 @@
 # PROGRESS — Rewind
 
-Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → waiting for Ashutosh before 8.2** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
+Deadline: Fri 30 Oct 2026 · Current phase: **8.1 done, config FROZEN (action weight 0, raw; hash 9917a937) → confirmed by Ashutosh (option 1, + pre-declared secondary w2) → 8.2** · Phases 0–4 done (Gate 4.4: pad/motion/raw) · Gate 5.1: LanguageBind ADOPTED (7/3/3) · 5.2 action index DONE (300 clips, 44,682 windows, verified) · Gate 6.2: event branch DROPPED (rule, part 1) · 7.1 engine + 12 indexes DONE · 7.4 action weight 2 (rule) · 7.3 API 46 ms median · 7.2 HNSW ≈ NumPy at real sizes (ef 200 recall 0.94)
 
 ---
 
@@ -2590,6 +2590,17 @@ clean commit `76697cc`; plan pre-registered in `dde89b0` before any result)
 - Ashutosh: confirm the frozen config (A was a one-query tie against the variant with better summary numbers) before 8.2.
 - Rows from the first consistency run (be0128a-dirty, 4 rows) stay in experiments.csv; the clean re-run was --no-log.
 
+## Ashutosh's decision at the freeze (Tue 27 Oct, ~19:45) — recorded and committed BEFORE any test read
+
+- **Option 1: the frozen config is confirmed** (action weight 0, as decided by the pre-registered rule).
+- **Primary result (the headline):** the frozen config, hash `9917a937…5f09` (`configs/FROZEN_CONFIG.sha256`), run once
+  on test as planned (step 8.2).
+- **Pre-declared secondary result:** the same config with **action weight 2**, run once on test **in the same 8.2
+  run**, reported separately and labelled *secondary*. It **cannot replace the primary result, whatever the outcome**.
+  Implementation: `scripts/test_run.py` overrides only `search.weights.action` in memory for the secondary system; the
+  config file (and its frozen hash) is unchanged.
+- **Finding F2** (below): the paired rule ignores magnitude. Recommended for future work; **not applied here**.
+
 ## Findings for the report (collected for results/SUMMARY.md and the failure analysis, step 10.2)
 
 - **F1 — Event branch: tracking is not the bottleneck; the stop/start rule is (Phase 6, tuning, 26 Oct).** Of 701
@@ -2607,6 +2618,14 @@ clean commit `76697cc`; plan pre-registered in `dde89b0` before any result)
   "fires nearby" now uses strict positive overlap like `match_events` (the scratch used inclusive ends); only G340
   stops changed (47 % → 43 %). The report's git hash is `d5e443d-dirty` because the then-uncommitted
   `scripts/check_action_pass.py` (step 5.2) was in the tree; the coverage code ran as committed in `d5e443d`.
+
+- **F2 — The paired gate rule counts wins and losses and ignores magnitude (step 8.1, dev, 27 Oct).** In comparison A
+  (action weight 0 vs 2) weight 2 turned two misses into hits (dev-s05 IR, dev-s10; ~13,000 s saved each) and was
+  20–300 s slower on six queries both settings found; W/T/L 8/1/8, so the rule kept weight 0 although weight 2 was
+  better on the median (306 vs 401 s), hits (11 vs 9), R@10 (0.500 vs 0.333) and both family means. A
+  magnitude-aware rule (e.g. a paired CI on the mean / median difference, or counting a miss turned into a hit as
+  decisive) is recommended for future work. **Not applied here**; the weight-2 variant is reported as a pre-declared
+  secondary result on test (decision above).
 
 ---
 
