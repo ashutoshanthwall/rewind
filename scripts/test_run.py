@@ -9,6 +9,11 @@ Before anything is read from test:
      --after-crash "<reason>"; the reason is printed in the report.
 This is the only script allowed to read test (tests/test_frozen_queries.py TEST_ACCESS_ALLOWED).
 
+Pre-declared secondary result (Ashutosh, PROGRESS.md, committed in 383bfca before any test read): the same config
+with search.weights.action = SECONDARY_ACTION_WEIGHT, overridden in memory only (the config file and its frozen hash
+are unchanged), run once in this same run, reported in its own section and labelled secondary. It never replaces
+the primary (headline) result.
+
 Rewind: the frozen config through the Phase 7 path (C++ engine, HNSW at ef_search, top k per branch over the test
 footage -> z-score fusion of the branches with weight > 0 -> clips), scored by scripts/appearance_search
 .query_rows_from. Baselines: scripts/run_baselines.run_videos (sequential, random, witness ±10 min, motion). The same
@@ -65,6 +70,9 @@ FIGURES = REPO_ROOT / "results" / "figures"
 STARTED = REPORTS / "test_run.started"
 FROZEN = REPO_ROOT / "configs" / "FROZEN_CONFIG.sha256"
 TOP_CLIPS = 10         # clips per query saved for the failure analysis (8.3)
+SECONDARY = "rewind_secondary_w2"
+SECONDARY_ACTION_WEIGHT = 2   # pre-declared in PROGRESS.md (383bfca): an analysis setting fixed before the run, not a
+                              # tunable of the system; it must not go into config.yaml (that would change the frozen hash)
 QUERY_FIELDS = ("query_id", "kind", "qtype", "specificity", "modality", "label_source", "query", "activity_type",
                 "event_id", "camera_id", "clip", "start_time", "end_time", "start_s", "end_s")   # saved for 8.3
 
@@ -174,15 +182,7 @@ def report(df: pd.DataFrame, summ: dict, ranks: pd.DataFrame, cfg: dict, stamp: 
         f"Rewind found {meta['hits']} of {summ['rewind']['n_specific']} specific events in its clip list (a miss costs "
         f"the list + a full review of the {meta['hours']:.2f} h). Baselines rank all footage, so they never miss.", "",
         "## Headline: seconds watched before the first correct clip, Rewind vs each baseline (paired, specific)", ""]
-    rw = spec[spec.system == "rewind"].set_index("query_id")["seconds"]
-    rows = []
-    for s in SYSTEMS:
-        b = spec[spec.system == s].set_index("query_id")["seconds"].reindex(rw.index)
-        d = (b - rw).tolist()        # positive = Rewind needs fewer seconds
-        rows.append([s, f"{med(rw):,.0f}", f"{med(b):,.0f}", sum(x > 0 for x in d), sum(x == 0 for x in d),
-                     sum(x < 0 for x in d), fmt_ci(d, med, cfg, "{:+,.0f}"), f"{med(b) / med(rw):.1f}x"])
-    lines += [rows_table(["baseline", "Rewind median s", "baseline median s", "Rewind faster", "ties",
-                          "Rewind slower", "median paired saving s [CI]", "ratio of medians"], rows), "",
+    lines += [paired_table(spec, "rewind", SYSTEMS, cfg), "",
               "## Specific queries by qtype (median seconds watched; Rewind R@10)", ""]
     for col in ("qtype", "specificity"):
         rows = []
@@ -221,10 +221,45 @@ def report(df: pd.DataFrame, summ: dict, ranks: pd.DataFrame, cfg: dict, stamp: 
         r = info.loc[q]
         best = "" if rk is None or q not in rk.index else ", ".join(f"{b} {int(v)}" for b, v in rk.loc[q].items())
         rows.append([q, r.kind, r.qtype, r.specificity, r.modality, r.label_source, r.camera_id or "",
-                     *(piv.loc[q].get(s, "—") if isinstance(piv.loc[q].get(s), str) else "—" for s in systems), best])
+                     *(piv.loc[q].get(s, "—") if isinstance(piv.loc[q].get(s), str) else "—"
+                       for s in (*systems, SECONDARY)), best])
     lines += [rows_table(["query", "kind", "qtype", "specificity", "modality", "label source", "camera", *systems,
-                          "best event-vector rank (exact)"], rows), ""]
+                          f"{SECONDARY} (secondary)", "best event-vector rank (exact)"], rows), ""]
+    sec = summ[SECONDARY]
+    hits2 = int(spec[spec.system == SECONDARY].hit.sum())
+    lines += [f"## Pre-declared SECONDARY result — action weight {SECONDARY_ACTION_WEIGHT} (not the headline)", "",
+              "Declared in PROGRESS.md (commit 383bfca) before any test read, run once in this same run: the frozen "
+              f"config with only `search.weights.action` = {SECONDARY_ACTION_WEIGHT} (in memory; the config file and its "
+              "hash are unchanged). **It cannot replace the primary result above, whatever the outcome.**", "",
+              rows_table(["system", "specific n", "hits", "median s watched [CI]", "mean s",
+                          *(f"R@{k} [CI]" for k in ks), *(f"category mAP@{k} [CI]" for k in ck)],
+                         [[s, summ[s]["n_specific"], int(spec[spec.system == s].hit.sum()),
+                           f"{summ[s]['median_seconds']:,.0f} [{summ[s]['median_seconds_ci_lo']:,.0f}, "
+                           f"{summ[s]['median_seconds_ci_hi']:,.0f}]", f"{summ[s]['mean_seconds']:,.0f}",
+                           *(f"{summ[s][f'R@{k}']:.3f} [{summ[s][f'R@{k}_ci_lo']:.3f}, {summ[s][f'R@{k}_ci_hi']:.3f}]"
+                             for k in ks),
+                           *(f"{summ[s][f'mAP@{k}']:.3f} [{summ[s][f'mAP@{k}_ci_lo']:.3f}, {summ[s][f'mAP@{k}_ci_hi']:.3f}]"
+                             for k in ck)] for s in ("rewind", SECONDARY)]), "",
+              f"Secondary found {hits2} of {sec['n_specific']} specific events.", "",
+              "Secondary vs each baseline (paired, specific; seconds watched):", "",
+              paired_table(spec, SECONDARY, SYSTEMS, cfg), "",
+              "Secondary vs primary (paired, specific; informational, no decision):", "",
+              paired_table(spec, SECONDARY, ["rewind"], cfg), ""]
     return "\n".join(lines)
+
+
+def paired_table(spec: pd.DataFrame, system: str, others: list, cfg: dict) -> str:
+    """Seconds watched of `system` vs each of `others`, paired by query (positive saving = `system` faster)."""
+    med = statistics.median
+    a = spec[spec.system == system].set_index("query_id")["seconds"]
+    rows = []
+    for s in others:
+        b = spec[spec.system == s].set_index("query_id")["seconds"].reindex(a.index)
+        d = (b - a).tolist()
+        rows.append([s, f"{med(a):,.0f}", f"{med(b):,.0f}", sum(x > 0 for x in d), sum(x == 0 for x in d),
+                     sum(x < 0 for x in d), fmt_ci(d, med, cfg, "{:+,.0f}"), f"{med(b) / med(a):.1f}x"])
+    return rows_table(["vs", f"{system} median s", "other median s", f"{system} faster", "ties", f"{system} slower",
+                       "median paired saving s [CI]", "ratio of medians"], rows)
 
 
 def hex_bgr(h: str) -> tuple:
@@ -331,29 +366,34 @@ def main() -> None:
     a = cfg["appearance"]
     scfg = SearchConfig.from_config(cfg)
     engine = Engine(EngineConfig.from_config(cfg), {b: branch_model(cfg, b) for b in branches}, branches)
+    sec_weights = check_weights({**cfg["search"]["weights"], "action": SECONDARY_ACTION_WEIGHT}, branches)
     action_text = {}
-    if weights.get("action", 0) > 0:
+    if weights.get("action", 0) > 0 or sec_weights.get("action", 0) > 0:
         lb = LanguageBind(REPO_ROOT / cfg["action"]["languagebind"]["weights_dir"])
         texts = [q["query"] for q in queries]
         action_text = dict(zip(texts, lb.encode_text(texts)))
         del lb
         torch.cuda.empty_cache()
     clip = Clip(a["model"], a["pretrained"])
-    ranker = RecordingRanker(engine, videos, weights, action_text, cfg["ingest"]["max_name_duration_diff_s"], split)
+    join = cfg["ingest"]["max_name_duration_diff_s"]
+    ranker = RecordingRanker(engine, videos, weights, action_text, join, split)
     rewind_rows = query_rows_from(queries, truth, ranker, clip, cfg, scfg)
+    sec_ranker = FusedRanker(engine, videos, sec_weights, action_text, join, split)
+    sec_rows = query_rows_from(queries, truth, sec_ranker, clip, cfg, scfg)
     z_app = {q["query"]: clip.encode_text([q["query"]])[0] for q in queries}
-    ranks = pd.DataFrame(event_ranks(engine, ranker, queries, z_app, action_text))
+    # event ranks for every branch searched by either system (the secondary searches both; ranges are the same)
+    ranks = pd.DataFrame(event_ranks(engine, sec_ranker, queries, z_app, action_text))
     base_rows = run_videos(conn, split, videos, queries, truth, cfg, args.art)
 
     # --- assemble, report, then log ---
     qinfo = {q["query_id"]: q for q in queries}
     ap = f"AP@{max(cfg['metrics']['category_k'])}"
-    rows = [r | {"system": "rewind"} for r in rewind_rows] + base_rows
+    rows = [r | {"system": "rewind"} for r in rewind_rows] + [r | {"system": SECONDARY} for r in sec_rows] + base_rows
     for r in rows:
         q = qinfo[r["query_id"]]
         r |= {"label_source": q["label_source"], "camera_id": q["camera_id"]}
         if r["kind"] == "specific":
-            r["cell"] = f"{r['seconds']:,.0f}" + (f" / {r['hit_rank']}" if r["system"] == "rewind" else "")
+            r["cell"] = f"{r['seconds']:,.0f}" + (f" / {r['hit_rank']}" if r["system"] in ("rewind", SECONDARY) else "")
         else:
             r["cell"] = f"{r[ap]:.3f}"
     df = pd.DataFrame(rows)
@@ -378,10 +418,15 @@ def main() -> None:
         print("REHEARSAL on dev: nothing logged, no marker written")
         return
     for s, x in summ.items():
-        extra = {"hits": meta["hits"]} if s == "rewind" else {}
-        log_experiment(split, x | extra, notes=f"step 8.2 THE test run: {s}"
-                       + (f" (weights {meta['weights']}, {meta['appearance']}, ef {cfg['search']['ef_search']})"
-                          if s == "rewind" else " baseline"), stamp=stamp)
+        if s in ("rewind", SECONDARY):
+            hits = int(df[(df.system == s) & (df.kind == "specific")].hit.sum())
+            w = meta["weights"] if s == "rewind" else dict(sec_weights)
+            role = "PRIMARY rewind" if s == "rewind" else f"PRE-DECLARED SECONDARY {s} (cannot replace primary)"
+            log_experiment(split, x | {"hits": hits}, stamp=stamp,
+                           notes=f"step 8.2 THE test run: {role} (weights {w}, {meta['appearance']}, "
+                                 f"ef {cfg['search']['ef_search']})")
+        else:
+            log_experiment(split, x, notes=f"step 8.2 THE test run: {s} baseline", stamp=stamp)
 
 
 if __name__ == "__main__":
