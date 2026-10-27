@@ -23,14 +23,14 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from rewind.ingest.manifest import connect, load_videos
+from rewind.ingest.manifest import connect
 from rewind.paths import REPO_ROOT, display_path
 from rewind.video import frames_at
 from scripts.select_footage import rows_table
 
 CAUSES = ("object too small", "IR", "detector miss", "track broken", "action too brief", "ambiguous query",
           "dropped by dedup", "correct but unlabelled", "other")
-THUMB_W = 400          # px per thumbnail in the strip
+THUMB_W = 640          # px per thumbnail in the strip
 TOP = 3                # returned clips shown per failure
 
 
@@ -40,16 +40,16 @@ def best_hit(c: dict) -> tuple[float, dict | None]:
     return (h["t_s"], h) if h else (c["first_hit_s"], None)
 
 
-def thumbs(clips: list[dict], videos: dict, proxies: dict) -> np.ndarray:
+def thumbs(clips: list[dict], widths: dict, proxies: dict) -> np.ndarray:
+    """Best-hit proxy frames of the clips side by side; boxes (original pixels) scaled to the proxy."""
     tiles = []
     for c in clips:
-        v = videos[c["video_id"]]
         pr = proxies[c["video_id"]]
         t, h = best_hit(c)
         f = min(int(round(t * pr["fps"])), pr["n_frames"] - 1)
         _, img = next(frames_at(REPO_ROOT / pr["path"], pr["n_frames"], {f}))
         if h is not None and h.get("x1") is not None:
-            s = img.shape[1] / v.width
+            s = img.shape[1] / widths[c["video_id"]]
             cv2.rectangle(img, (int(h["x1"] * s), int(h["y1"] * s)), (int(h["x2"] * s), int(h["y2"] * s)),
                           (0, 200, 255), 3)
         img = cv2.resize(img, (THUMB_W, int(img.shape[0] * THUMB_W / img.shape[1])))
@@ -74,7 +74,7 @@ def main() -> None:
     saved = json.loads((args.in_dir / "test_clips.json").read_text())
     ranks = pd.read_csv(args.in_dir / "test_event_ranks.csv")
     conn = connect(args.db)
-    videos = {v.video_id: v for v in load_videos(conn)}
+    widths = dict(conn.execute("SELECT video_id, width FROM videos").fetchall())
     proxies = {r[0]: {"path": r[1], "n_frames": r[2], "fps": r[3]}
                for r in conn.execute("SELECT video_id, path, n_frames, fps FROM proxies")}
 
@@ -86,7 +86,7 @@ def main() -> None:
         clips = saved[r.query_id]["clips"][:TOP]
         strip = figs / f"{r.query_id}_rewind.jpg"
         if clips:
-            cv2.imwrite(str(strip), thumbs(clips, videos, proxies))
+            cv2.imwrite(str(strip), thumbs(clips, widths, proxies))
         rk = ranks[ranks.query_id == r.query_id]
         best = ", ".join(f"{x.branch} {x.best_rank} ({x.vectors_in_event} in event)" for x in rk.itertuples())
         span = f"{q['camera_id']} {q['start_time'][11:19]}–{q['end_time'][11:19]} ({q['clip']} {float(q['start_s']):.0f}–{float(q['end_s']):.0f} s)"
@@ -96,7 +96,7 @@ def main() -> None:
                              if 'appearance' in c['best'] else "") for c in clips)
         key = REPO_ROOT / "eval" / "queries" / "keyframes" / f"{r.query_id}.jpg"
         table.append([r.query_id, r.qtype, r.specificity, f"{r.modality} / {r.label_source}", q["activity_type"],
-                      f"\"{q['query']}\"", span, f"{r.seconds:,.0f} s / " + ("miss" if r.hit_rank == -1 else f"rank {r.hit_rank}"),
+                      f"\"{q['query']}\"", span, f"{r.seconds:,.0f} s / " + ("miss" if r.hit_rank == -1 else f"rank {int(r.hit_rank)}"),
                       best, ret, f"[truth]({display_path(key)}) · [returned]({display_path(strip)})", ""])
         csv_rows.append({"query_id": r.query_id, "qtype": r.qtype, "modality": r.modality, "seconds": r.seconds,
                          "hit_rank": r.hit_rank, "event_vector_ranks": best, "cause": ""})
