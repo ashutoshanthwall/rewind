@@ -47,8 +47,12 @@ GRID = [0, 0.25, 0.5, 1, 2]
 class FusedRanker:
     """ranked(z, cfg, rgb_only, query) for query_rows: engine search per active branch over the split -> fusion."""
 
-    def __init__(self, engine: Engine, videos: list, weights: dict, action_text: dict, join_gap_s: float):
+    def __init__(self, engine: Engine, videos: list, weights: dict, action_text: dict, join_gap_s: float,
+                 split: str = SPLIT, exact: bool = False, engines: dict | None = None):
+        """split: name for error messages (videos decide the footage); exact: brute force in the engine instead of
+        HNSW; engines: branch -> Engine overriding `engine` for that branch (step 8.1 appearance variants)."""
         self.engine, self.weights, self.action_text = engine, weights, action_text
+        self.split, self.exact, self.engines = split, exact, engines or {}
         self.by_id = {v.video_id: v for v in videos}
         self.durations = {v.video_id: v.n_frames / v.fps for v in videos}
         self.footage_s = sum(self.durations.values())
@@ -62,10 +66,11 @@ class FusedRanker:
             if w == 0:
                 continue
             q = z if b == "appearance" else self.action_text[text]
-            h = self.engine.search(b, q, ranges=ranges)
+            h = self.engines.get(b, self.engine).search(b, q, ranges=ranges, exact=self.exact)
             bad = set(h["video_id"]) - set(self.by_id)
             if bad:
-                raise RuntimeError(f"{b}: search returned rows of videos outside the {SPLIT} split: {sorted(bad)[:5]}")
+                raise RuntimeError(f"{b}: search returned rows of videos outside the {self.split} split: "
+                                   f"{sorted(bad)[:5]}")
             out[b] = h
         return out
 
